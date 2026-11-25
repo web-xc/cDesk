@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { AppInfo, Capabilities, DisplayInfo, Peer, Settings } from '@shared/types'
 import type { SessionRole, SessionTransport } from './lib/session'
-import { randomPin } from './lib/utils'
+import { randomPassword } from './lib/utils'
 
 export interface Toast {
   id: string
@@ -10,22 +10,16 @@ export interface Toast {
   desc?: string
 }
 
-export interface IncomingCall {
-  connId: string
-  name: string
-  os: string
-  address?: string
-  ts: number
-}
-
 export interface SessionLaunch {
   role: SessionRole
   transport: SessionTransport
   pin: string
   connId?: string
+  code?: string
+  sessionId?: string
+  offerSdp?: string
   peerName: string
   peerOs?: string
-  invite?: string
   displayId?: number
 }
 
@@ -42,7 +36,9 @@ interface AppState {
   pin: string
   page: Page
   launch: SessionLaunch | null
-  incoming: IncomingCall | null
+  signalConnected: boolean
+  signalBroker: string
+  signalError: string
   toasts: Toast[]
 
   init(): Promise<void>
@@ -54,7 +50,7 @@ interface AppState {
   regeneratePin(): void
   setPage(page: Page): void
   setLaunch(launch: SessionLaunch | null): void
-  setIncoming(call: IncomingCall | null): void
+  setSignalStatus(connected: boolean, broker: string, error?: string): void
   patchSettings(patch: Partial<Settings>): Promise<void>
   toast(kind: Toast['kind'], title: string, desc?: string): void
   dismissToast(id: string): void
@@ -62,7 +58,7 @@ interface AppState {
 
 function resolvePin(settings: Settings | null): string {
   if (settings?.pinMode === 'fixed' && settings.fixedPin.length >= 4) return settings.fixedPin
-  return randomPin(6)
+  return randomPassword(6)
 }
 
 export const useApp = create<AppState>((set, get) => ({
@@ -72,11 +68,13 @@ export const useApp = create<AppState>((set, get) => ({
   capabilities: null,
   displays: [],
   peers: [],
-  hosting: false,
+  hosting: true,
   pin: '',
   page: 'home',
   launch: null,
-  incoming: null,
+  signalConnected: false,
+  signalBroker: '',
+  signalError: '',
   toasts: [],
 
   async init() {
@@ -87,18 +85,29 @@ export const useApp = create<AppState>((set, get) => ({
       window.cdesk.system.capabilities(),
       window.cdesk.system.displays()
     ])
-    set({ info, settings, capabilities, displays, booted: true })
+    set({
+      info,
+      settings,
+      capabilities,
+      displays,
+      booted: true,
+      pin: resolvePin(settings),
+      hosting: true
+    })
     try {
       await window.cdesk.lan.start({
         id: settings.deviceId,
         name: settings.deviceName,
-        hosting: false,
+        hosting: true,
         version: info.version
       })
       set({ peers: await window.cdesk.lan.peers() })
     } catch (err) {
       console.error('LAN 启动失败', err)
     }
+    void window.cdesk.signal.connect().then((status) => {
+      get().setSignalStatus(status.connected, status.broker, status.error)
+    })
     document.documentElement.dataset.theme = settings.theme === 'light' ? 'light' : 'dark'
     document.documentElement.dataset.reduceMotion = settings.reduceMotion ? 'true' : 'false'
   },
@@ -123,29 +132,30 @@ export const useApp = create<AppState>((set, get) => ({
   async setHosting(on) {
     const { settings, info, pin, launch } = get()
     if (!settings || !info) return
-    const nextPin = on ? resolvePin(settings) || pin : ''
-    set({ hosting: on, pin: on ? nextPin : '' })
+    const nextPin = on ? pin || resolvePin(settings) : ''
+    set({ hosting: on, pin: nextPin })
     await window.cdesk.lan.update({
       id: settings.deviceId,
       name: settings.deviceName,
       hosting: on,
       version: info.version
     })
-    if (!on) {
-      set({ incoming: null })
-      if (launch?.role === 'host' && launch.transport === 'lan') set({ launch: null })
-    }
+    if (!on && launch?.role === 'host' && launch.transport === 'lan') set({ launch: null })
     get().toast(
       on ? 'success' : 'info',
       on ? '已允许远程控制' : '已停止接受连接',
-      on ? '同一局域网的设备现在可以发现本机' : undefined
+      on ? '对方输入控制码与密码即可直接连接' : undefined
     )
   },
 
   regeneratePin() {
     const { settings, hosting } = get()
     if (!hosting) return
-    set({ pin: resolvePin(settings) })
+    if (settings?.pinMode === 'fixed' && settings.fixedPin.length >= 4) {
+      set({ pin: settings.fixedPin })
+      return
+    }
+    set({ pin: randomPassword(6) })
   },
 
   setPage(page) {
@@ -156,24 +166,32 @@ export const useApp = create<AppState>((set, get) => ({
     set({ launch })
   },
 
-  setIncoming(call) {
-    set({ incoming: call })
+  setSignalStatus(connected, broker, error = '') {
+    set({ signalConnected: connected, signalBroker: broker, signalError: error })
   },
 
   async patchSettings(patch) {
+    const previous = get().settings
     const settings = await window.cdesk.settings.set(patch)
     set({ settings })
     if (patch.theme) document.documentElement.dataset.theme = settings.theme === 'light' ? 'light' : 'dark'
     if (patch.reduceMotion !== undefined) {
       document.documentElement.dataset.reduceMotion = settings.reduceMotion ? 'true' : 'false'
     }
-    if (patch.deviceName !== undefined || patch.deviceId !== undefined) {
+    if (
+      patch.pinMode !== undefined ||
+      patch.fixedPin !== undefined ||
+      previous?.pinMode !== settings.pinMode
+    ) {
+      set({ pin: resolvePin(settings) })
+    }
+    if (patch.deviceName !== undefined) {
       const info = get().info
       await window.cdesk.lan.update({
         id: settings.deviceId,
         name: settings.deviceName,
         hosting: get().hosting,
-        version: info?.version ?? '1.0.0'
+        version: info?.version ?? '1.1.0'
       })
     }
   },

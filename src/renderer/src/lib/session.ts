@@ -1,10 +1,10 @@
 import type { QualityPreset } from '@shared/types'
 import { QUALITY_PRESETS } from './quality'
-import { decodeSignal, encodeSignal } from './code'
+import { open, seal } from './secure'
 import { clamp, uid } from './utils'
 
 export type SessionRole = 'host' | 'viewer'
-export type SessionTransport = 'lan' | 'manual'
+export type SessionTransport = 'lan' | 'code'
 export type SessionPhase =
   | 'idle'
   | 'preparing'
@@ -88,6 +88,7 @@ export interface SessionOptions {
   displayId: number
   quality: QualityPreset
   iceServers: RTCIceServer[]
+  deviceId: string
   deviceName: string
   deviceOs: string
   wantAudio: boolean
@@ -102,12 +103,13 @@ interface SignalPayload {
   candidate?: RTCIceCandidateInit | null
 }
 
-interface InvitePayload {
+/** 经 AES-GCM 封装的跨网信令负载 */
+interface CodeSignal {
   v: number
   type: 'offer' | 'answer'
   sdp: string
-  name?: string
-  os?: string
+  sessionId: string
+  from?: { id?: string; name?: string; os?: string }
 }
 
 interface OutgoingFile {
@@ -140,10 +142,15 @@ export class RemoteSession {
   private iceServers: RTCIceServer[]
   private signal: (data: unknown) => void
   private displayId: number
+  private deviceId: string
   private deviceName: string
   private deviceOs: string
   private wantAudio: boolean
   private viewOnly: boolean
+  private code = ''
+  private sessionId = ''
+  private offCodeSignal: (() => void) | null = null
+  private codeTimer: ReturnType<typeof setTimeout> | null = null
 
   private pc: RTCPeerConnection | null = null
   private ctl: RTCDataChannel | null = null
@@ -196,6 +203,7 @@ export class RemoteSession {
     this.quality = options.quality
     this.iceServers = options.iceServers
     this.displayId = options.displayId
+    this.deviceId = options.deviceId
     this.deviceName = options.deviceName
     this.deviceOs = options.deviceOs
     this.wantAudio = options.wantAudio
@@ -236,65 +244,71 @@ export class RemoteSession {
     this.setPhase('waiting')
   }
 
-  async createInvite(): Promise<string> {
+  private async bindHostTracks(): Promise<void> {
     const pc = this.ensurePc()
-    const stream = await this.ensureCapture()
-    for (const track of stream.getTracks()) {
-      const sender = pc.addTrack(track, stream)
-      if (track.kind === 'video') this.videoSender = sender
+    const stream = this.localStream
+    if (!stream) return
+    for (const transceiver of pc.getTransceivers()) {
+      const kind = transceiver.receiver.track.kind
+      if (kind === 'video') {
+        const track = stream.getVideoTracks()[0]
+        if (track) {
+          await transceiver.sender.replaceTrack(track)
+          transceiver.direction = 'sendonly'
+          this.videoSender = transceiver.sender
+        }
+      } else if (kind === 'audio') {
+        const track = stream.getAudioTracks()[0]
+        if (track) {
+          await transceiver.sender.replaceTrack(track)
+          transceiver.direction = 'sendonly'
+        } else {
+          transceiver.direction = 'inactive'
+        }
+      }
     }
-    this.createChannels()
-    const offer = await pc.createOffer()
-    await pc.setLocalDescription(offer)
-    await this.waitIce(pc, 3000)
-    this.setPhase('waiting')
-    return encodeSignal({
-      v: 1,
-      type: 'offer',
-      sdp: pc.localDescription?.sdp ?? '',
-      name: this.deviceName,
-      os: this.deviceOs
-    } satisfies InvitePayload)
   }
 
-  async applyAnswerCode(code: string): Promise<void> {
-    const payload = await decodeSignal<InvitePayload>(code)
-    if (payload.type !== 'answer') throw new Error('请粘贴对方生成的应答码')
+  private async createAnswerSdp(waitMs: number): Promise<string> {
     const pc = this.ensurePc()
-    await pc.setRemoteDescription({ type: 'answer', sdp: payload.sdp })
-    this.setPhase('connecting')
+    const answer = await pc.createAnswer()
+    await pc.setLocalDescription(answer)
+    if (waitMs > 0) await this.waitIce(pc, waitMs)
+    return pc.localDescription?.sdp ?? ''
   }
 
   async acceptOffer(sdp: string): Promise<void> {
     const pc = this.ensurePc()
     await this.ensureCapture()
     await pc.setRemoteDescription({ type: 'offer', sdp })
-    const stream = this.localStream
-    if (stream) {
-      for (const transceiver of pc.getTransceivers()) {
-        const kind = transceiver.receiver.track.kind
-        if (kind === 'video') {
-          const track = stream.getVideoTracks()[0]
-          if (track) {
-            await transceiver.sender.replaceTrack(track)
-            transceiver.direction = 'sendonly'
-            this.videoSender = transceiver.sender
-          }
-        } else if (kind === 'audio') {
-          const track = stream.getAudioTracks()[0]
-          if (track) {
-            await transceiver.sender.replaceTrack(track)
-            transceiver.direction = 'sendonly'
-          } else {
-            transceiver.direction = 'inactive'
-          }
-        }
-      }
-    }
-    const answer = await pc.createAnswer()
-    await pc.setLocalDescription(answer)
-    this.signal({ kind: 'answer', sdp: pc.localDescription?.sdp ?? '' } satisfies SignalPayload)
+    await this.bindHostTracks()
+    const answerSdp = await this.createAnswerSdp(0)
+    this.signal({ kind: 'answer', sdp: answerSdp } satisfies SignalPayload)
     this.setPhase('connecting')
+  }
+
+  /** 被控端：接受控制码 offer，并把加密应答发布到对方的会话主题 */
+  async acceptCodeOffer(
+    sdp: string,
+    sessionId: string,
+    code: string,
+    password: string
+  ): Promise<void> {
+    this.pin = password
+    this.code = code
+    this.sessionId = sessionId
+    const pc = this.ensurePc()
+    await this.ensureCapture()
+    await pc.setRemoteDescription({ type: 'offer', sdp })
+    await this.bindHostTracks()
+    const answerSdp = await this.createAnswerSdp(3500)
+    const sealed = await seal(
+      { v: 1, type: 'answer', sdp: answerSdp, sessionId } satisfies CodeSignal,
+      this.pin,
+      this.code
+    )
+    this.setPhase('connecting', '密码验证通过，正在建立点对点连接…')
+    await window.cdesk.signal.publish(this.outTopic(), sealed)
   }
 
   async switchDisplay(displayId: number): Promise<void> {
@@ -343,33 +357,72 @@ export class RemoteSession {
     this.signal({ kind: 'offer', sdp: pc.localDescription?.sdp ?? '' } satisfies SignalPayload)
   }
 
-  async joinInvite(code: string): Promise<string> {
-    const payload = await decodeSignal<InvitePayload>(code)
-    if (payload.type !== 'offer') throw new Error('这不是有效的邀请码')
-    const pc = this.ensurePc()
-    if (payload.name) {
-      this.remoteInfo = {
-        name: payload.name,
-        os: payload.os ?? '',
-        platform: '',
-        monitors: [],
-        activeDisplayId: 0,
-        canControl: true,
-        controlAllowed: true,
-        version: ''
-      }
-      this.hooks.onInfo?.(this.remoteInfo)
+  /** 主控端：向固定控制码发布加密 offer，并等待加密 answer */
+  async connectCode(code: string, password: string): Promise<void> {
+    this.code = code
+    this.pin = password
+    this.sessionId = uid()
+    const topic = this.outTopic()
+    this.offCodeSignal = window.cdesk.signal.onMessage((msg) => {
+      if (msg.topic !== topic || this.destroyed) return
+      void (async () => {
+        const payload = await open<CodeSignal>(msg.payload, this.pin, this.code)
+        if (!payload || payload.type !== 'answer' || payload.sessionId !== this.sessionId) return
+        if (this.codeTimer) {
+          clearTimeout(this.codeTimer)
+          this.codeTimer = null
+        }
+        try {
+          if (this.pc?.signalingState === 'have-local-offer') {
+            await this.pc.setRemoteDescription({ type: 'answer', sdp: payload.sdp })
+            this.setPhase('connecting', '已收到对方应答，正在建立点对点连接…')
+          }
+        } catch (err) {
+          this.fail(err instanceof Error ? err.message : '应答处理失败')
+        }
+      })()
+    })
+    try {
+      await window.cdesk.signal.subscribe(topic)
+    } catch {
+      /* 发布阶段会给出更明确的错误 */
     }
-    await pc.setRemoteDescription({ type: 'offer', sdp: payload.sdp })
-    const answer = await pc.createAnswer()
-    await pc.setLocalDescription(answer)
-    this.setPhase('connecting')
-    await this.waitIce(pc, 3000)
-    return encodeSignal({
-      v: 1,
-      type: 'answer',
-      sdp: pc.localDescription?.sdp ?? ''
-    } satisfies InvitePayload)
+    const pc = this.ensurePc()
+    pc.addTransceiver('video', { direction: 'recvonly' })
+    pc.addTransceiver('audio', { direction: 'recvonly' })
+    this.createChannels()
+    await this.applyCodecPreference(pc)
+    const offer = await pc.createOffer()
+    await pc.setLocalDescription(offer)
+    this.setPhase('connecting', '正在收集网络地址…')
+    await this.waitIce(pc, 4500)
+    const sealed = await seal(
+      {
+        v: 1,
+        type: 'offer',
+        sdp: pc.localDescription?.sdp ?? '',
+        sessionId: this.sessionId,
+        from: { id: this.deviceId, name: this.deviceName, os: this.deviceOs }
+      } satisfies CodeSignal,
+      this.pin,
+      this.code
+    )
+    this.setPhase('connecting', '正在通过加密信令联系对方…')
+    this.startCodeTimer()
+    await window.cdesk.signal.publish(`cdesk/v1/${code}/inbox`, sealed)
+  }
+
+  private outTopic(): string {
+    return `cdesk/v1/${this.code}/out/${this.sessionId}`
+  }
+
+  private startCodeTimer(): void {
+    if (this.codeTimer) clearTimeout(this.codeTimer)
+    this.codeTimer = setTimeout(() => {
+      this.codeTimer = null
+      if (this.destroyed || this.phase === 'connected' || this.phase === 'closed') return
+      this.fail('控制码不存在或密码错误，请确认对方已开启「允许远程控制」')
+    }, 16000)
   }
 
   async handleSignal(data: SignalPayload): Promise<void> {
@@ -536,6 +589,11 @@ export class RemoteSession {
     if (this.destroyed) return
     this.destroyed = true
     this.clearTimers()
+    this.offCodeSignal?.()
+    this.offCodeSignal = null
+    if (this.code && this.sessionId) {
+      void window.cdesk.signal.unsubscribe(this.outTopic()).catch(() => {})
+    }
     try {
       this.ctl?.send(JSON.stringify({ t: 'bye' }))
     } catch {
@@ -809,7 +867,7 @@ export class RemoteSession {
     if (this.authTimer) clearTimeout(this.authTimer)
     this.authTimer = setTimeout(() => {
       if (!this.authorized && !this.destroyed) {
-        this.fail('等待对方授权超时，请确认访问码是否正确')
+        this.fail('等待对方响应超时，请确认控制密码是否正确')
       }
     }, 15000)
   }
@@ -841,7 +899,7 @@ export class RemoteSession {
       activeDisplayId: this.displayId,
       canControl: !this.viewOnly,
       controlAllowed: this.allowControl,
-      version: '1.0.0'
+      version: '1.1.0'
     }
     try {
       this.ctl.send(JSON.stringify({ t: 'info', info }))
@@ -860,10 +918,10 @@ export class RemoteSession {
             this.ctl?.send(JSON.stringify({ t: 'auth-result', ok: true }))
             this.authorize()
           } else {
-            this.ctl?.send(JSON.stringify({ t: 'auth-result', ok: false, reason: '访问码不正确' }))
+            this.ctl?.send(JSON.stringify({ t: 'auth-result', ok: false, reason: '控制密码不正确' }))
             this.authAttempts++
             if (this.authAttempts > 6) {
-              this.fail('访问码错误次数过多，已断开连接')
+              this.fail('控制密码错误次数过多，已断开连接')
               this.disconnect('验证失败')
             }
           }
@@ -976,7 +1034,7 @@ export class RemoteSession {
           this.authorize()
         } else {
           this.setPhase('authenticating', String(data.reason ?? '验证失败'))
-          this.hooks.onError?.(String(data.reason ?? '访问码不正确'))
+          this.hooks.onError?.(String(data.reason ?? '控制密码不正确'))
         }
         break
       }
@@ -1314,11 +1372,13 @@ export class RemoteSession {
     if (this.pingTimer) clearInterval(this.pingTimer)
     if (this.authTimer) clearTimeout(this.authTimer)
     if (this.connTimer) clearTimeout(this.connTimer)
+    if (this.codeTimer) clearTimeout(this.codeTimer)
     this.statsTimer = null
     this.clipboardTimer = null
     this.pingTimer = null
     this.authTimer = null
     this.connTimer = null
+    this.codeTimer = null
   }
 
   private setPhase(phase: SessionPhase, detail?: string): void {

@@ -1,4 +1,4 @@
-import type { QualityPreset } from '@shared/types'
+import type { QualityPreset, Settings } from '@shared/types'
 
 export const QUALITY_PRESETS: Record<
   QualityPreset,
@@ -33,12 +33,32 @@ export const QUALITY_PRESETS: Record<
   }
 }
 
+/** 国内可用的公共 STUN，Google 作为兜底；STUN 只用于发现公网地址 */
 export const DEFAULT_STUN = [
-  'stun:stun.l.google.com:19302',
-  'stun:stun1.l.google.com:19302'
+  'stun:stun.miwifi.com:3478',
+  'stun:stun.chat.bilibili.com:3478',
+  'stun:stun.hitv.com:3478',
+  'stun:stun.l.google.com:19302'
 ]
 
-export function buildIceServers(enabled: boolean, servers: string[] = DEFAULT_STUN): RTCIceServer[] {
-  if (!enabled) return []
-  return [{ urls: servers.length ? servers : DEFAULT_STUN }]
+export function buildIceServers(
+  settings: Pick<Settings, 'stunEnabled' | 'turnUrl' | 'turnUser' | 'turnPass'>,
+  servers: string[] = DEFAULT_STUN
+): RTCIceServer[] {
+  const list: RTCIceServer[] = []
+  if (settings.stunEnabled) {
+    list.push({ urls: servers.length ? servers : DEFAULT_STUN })
+  }
+  const turnUrls = (settings.turnUrl ?? '')
+    .split(/[\s,;]+/)
+    .map((url) => url.trim())
+    .filter(Boolean)
+  if (turnUrls.length) {
+    list.push({
+      urls: turnUrls,
+      username: settings.turnUser || undefined,
+      credential: settings.turnPass || undefined
+    })
+  }
+  return list
 }

@@ -19,7 +19,7 @@ import {
 import { useApp } from '../store'
 import { Button, Field, Input, Segmented, Switch } from '../components/ui'
 import { QUALITY_PRESETS } from '../lib/quality'
-import { cn } from '../lib/utils'
+import { cn, groupCode } from '../lib/utils'
 
 export default function SettingsPage() {
   const settings = useApp((s) => s.settings)
@@ -30,11 +30,17 @@ export default function SettingsPage() {
   const toast = useApp((s) => s.toast)
   const [name, setName] = useState(settings?.deviceName ?? '')
   const [fixedPin, setFixedPin] = useState(settings?.fixedPin ?? '')
+  const [turnUrl, setTurnUrl] = useState(settings?.turnUrl ?? '')
+  const [turnUser, setTurnUser] = useState(settings?.turnUser ?? '')
+  const [turnPass, setTurnPass] = useState(settings?.turnPass ?? '')
 
   useEffect(() => {
     setName(settings?.deviceName ?? '')
     setFixedPin(settings?.fixedPin ?? '')
-  }, [settings?.deviceName, settings?.fixedPin])
+    setTurnUrl(settings?.turnUrl ?? '')
+    setTurnUser(settings?.turnUser ?? '')
+    setTurnPass(settings?.turnPass ?? '')
+  }, [settings?.deviceName, settings?.fixedPin, settings?.turnUrl, settings?.turnUser, settings?.turnPass])
 
   if (!settings) return null
 
@@ -48,10 +54,15 @@ export default function SettingsPage() {
   const savePin = async () => {
     if (fixedPin.length >= 4) {
       await patchSettings({ fixedPin })
-      toast('success', '固定访问码已保存')
+      toast('success', '控制密码已保存')
     } else {
-      toast('error', '访问码至少需要 4 位数字')
+      toast('error', '控制密码至少需要 4 位')
     }
+  }
+
+  const saveTurn = async () => {
+    await patchSettings({ turnUrl, turnUser, turnPass })
+    toast('success', 'TURN 配置已保存')
   }
 
   const requestAccess = async () => {
@@ -91,8 +102,8 @@ export default function SettingsPage() {
             </div>
           </Field>
           <div className="kv-row">
-            <span>设备 ID</span>
-            <code>{settings.deviceId.slice(0, 8).toUpperCase()}</code>
+            <span>控制码</span>
+            <code>{groupCode(settings.deviceCode)}</code>
           </div>
           <div className="kv-row">
             <span>运行平台</span>
@@ -149,27 +160,26 @@ export default function SettingsPage() {
           </div>
           <div className="setting-row">
             <div>
-              <strong>访问码方式</strong>
-              <span>每次会话随机生成，或使用固定访问码</span>
+              <strong>控制密码</strong>
+              <span>默认随机生成，也可设为自定义密码</span>
             </div>
             <Segmented
               value={settings.pinMode}
               onChange={(pinMode) => void patchSettings({ pinMode })}
               options={[
                 { value: 'random', label: '随机' },
-                { value: 'fixed', label: '固定' }
+                { value: 'fixed', label: '自定义' }
               ]}
             />
           </div>
           {settings.pinMode === 'fixed' ? (
-            <Field label="固定访问码" hint="4–8 位数字，建议仅在可信网络中使用">
+            <Field label="自定义控制密码" hint="4–12 位字母或数字，保存后立即生效">
               <div className="inline-field">
                 <Input
                   value={fixedPin}
-                  inputMode="numeric"
-                  maxLength={8}
-                  placeholder="例如 246810"
-                  onChange={(e) => setFixedPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                  maxLength={12}
+                  placeholder="例如 cdesk2026"
+                  onChange={(e) => setFixedPin(e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12))}
                 />
                 <Button variant="secondary" onClick={() => void savePin()}>
                   保存
@@ -226,6 +236,33 @@ export default function SettingsPage() {
             </div>
             <Switch checked={settings.stunEnabled} onChange={(v) => void patchSettings({ stunEnabled: v })} />
           </div>
+          <Field
+            label="TURN 中转（可选）"
+            hint="双方均为对称 NAT 时直连会失败；填写自建 coturn 等 TURN 地址即可经中转建立加密连接"
+          >
+            <div className="stack-field">
+              <Input
+                value={turnUrl}
+                placeholder="turn:turn.example.com:3478"
+                onChange={(e) => setTurnUrl(e.target.value)}
+                onBlur={() => void saveTurn()}
+              />
+              <div className="inline-field">
+                <Input
+                  value={turnUser}
+                  placeholder="用户名"
+                  onChange={(e) => setTurnUser(e.target.value)}
+                  onBlur={() => void saveTurn()}
+                />
+                <Input
+                  value={turnPass}
+                  placeholder="密码"
+                  onChange={(e) => setTurnPass(e.target.value)}
+                  onBlur={() => void saveTurn()}
+                />
+              </div>
+            </div>
+          </Field>
           <div className="setting-row">
             <div>
               <strong>开机自动启动</strong>
@@ -235,7 +272,7 @@ export default function SettingsPage() {
           </div>
           <div className="notice">
             <Info size={14} />
-            <span>局域网连接不依赖任何服务器；邀请码模式也仅通过你与对方之间的通道交换信令。</span>
+            <span>控制码与密码经密码加密后才通过公共通道交换，屏幕与控制数据始终点对点直连。</span>
           </div>
         </section>
 

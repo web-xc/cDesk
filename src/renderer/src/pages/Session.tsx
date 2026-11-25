@@ -20,10 +20,8 @@ import {
   ShieldCheck,
   Signal,
   Square,
-  Upload,
   Volume2,
   VolumeX,
-  Wand2,
   X
 } from 'lucide-react'
 import type { QualityPreset } from '@shared/types'
@@ -33,20 +31,8 @@ import { RemoteSession } from '../lib/session'
 import type { ChatMessage, FileState, RemoteInfo, SessionPhase, SessionStats } from '../lib/session'
 import { QUALITY_PRESETS, buildIceServers } from '../lib/quality'
 import { closeConnection, sendSignal, subscribeSignals } from '../lib/lan'
-import { cn, formatBytes, formatDuration, platformLabel } from '../lib/utils'
-import { Button, CopyButton, IconButton, Input, Modal, Popover, Spinner, Textarea } from '../components/ui'
-
-function PinDigits({ pin }: { pin: string }) {
-  return (
-    <div className="pin-digits">
-      {pin.split('').map((digit, index) => (
-        <span key={index} className="pin-digit">
-          {digit}
-        </span>
-      ))}
-    </div>
-  )
-}
+import { cn, formatBytes, formatDuration, groupCode, platformLabel } from '../lib/utils'
+import { Button, IconButton, Input, Modal, Popover, Spinner, Textarea } from '../components/ui'
 
 function WaitingCard({
   children,
@@ -86,9 +72,6 @@ export default function SessionPage({ launch }: { launch: SessionLaunch }) {
   const [chatDraft, setChatDraft] = useState('')
   const [unread, setUnread] = useState(0)
   const [files, setFiles] = useState<FileState[]>([])
-  const [inviteCode, setInviteCode] = useState('')
-  const [answerCode, setAnswerCode] = useState('')
-  const [answerInput, setAnswerInput] = useState('')
   const [authPin, setAuthPin] = useState(launch.pin)
   const [authError, setAuthError] = useState('')
   const [fullscreen, setFullscreen] = useState(false)
@@ -99,7 +82,6 @@ export default function SessionPage({ launch }: { launch: SessionLaunch }) {
   const [chromeVisible, setChromeVisible] = useState(true)
   const [qualityOpen, setQualityOpen] = useState(false)
   const [monitorOpen, setMonitorOpen] = useState(false)
-  const [busy, setBusy] = useState(false)
 
   const sessionRef = useRef<RemoteSession | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -140,7 +122,8 @@ export default function SessionPage({ launch }: { launch: SessionLaunch }) {
       pin: launch.pin,
       displayId: launch.displayId ?? primaryDisplay,
       quality: settings.quality,
-      iceServers: buildIceServers(settings.stunEnabled),
+      iceServers: buildIceServers(settings),
+      deviceId: settings.deviceId,
       deviceName: settings.deviceName,
       deviceOs: `${appInfo?.osName ?? 'PC'} ${appInfo?.osVersion ?? ''}`.trim(),
       wantAudio: launch.role === 'host' && !!capabilities?.loopbackAudio,
@@ -209,13 +192,11 @@ export default function SessionPage({ launch }: { launch: SessionLaunch }) {
       try {
         if (launch.role === 'host') {
           await session.prepareHost(launch.displayId)
-          if (launch.transport === 'manual') {
-            const code = await session.createInvite()
-            if (active) setInviteCode(code)
+          if (launch.transport === 'code' && launch.offerSdp && launch.sessionId && launch.code) {
+            await session.acceptCodeOffer(launch.offerSdp, launch.sessionId, launch.code, launch.pin)
           }
-        } else if (launch.transport === 'manual' && launch.invite) {
-          const answer = await session.joinInvite(launch.invite)
-          if (active) setAnswerCode(answer)
+        } else if (launch.transport === 'code' && launch.code) {
+          await session.connectCode(launch.code, launch.pin)
         } else {
           await session.connectLan()
         }
@@ -465,20 +446,6 @@ export default function SessionPage({ launch }: { launch: SessionLaunch }) {
     }
   }
 
-  const applyAnswer = async () => {
-    if (!answerInput.trim()) return
-    setBusy(true)
-    try {
-      await sessionRef.current?.applyAnswerCode(answerInput.trim())
-      setAnswerInput('')
-      toast('success', '应答码已应用，等待对方验证访问码')
-    } catch (err) {
-      toast('error', '应答码无效', err instanceof Error ? err.message : undefined)
-    } finally {
-      setBusy(false)
-    }
-  }
-
   const retryAuth = () => {
     if (authPin.trim().length < 4) return
     setAuthError('')
@@ -583,94 +550,57 @@ export default function SessionPage({ launch }: { launch: SessionLaunch }) {
 
         {!connected ? (
           <div className="stage-placeholder">
-            {launch.transport === 'manual' && isHost ? (
-              <div className="waiting-panel">
-                <div className="overlay-icon">
-                  <Wand2 size={22} />
+            <div className="waiting-panel compact-panel">
+              <div className={cn('overlay-icon', phase !== 'error' && 'pulse')}>
+                {phase === 'error' ? <X size={22} /> : phase === 'preparing' ? <Spinner size={22} /> : <Monitor size={22} />}
+              </div>
+              <h3>
+                {phase === 'error'
+                  ? '连接失败'
+                  : isHost
+                    ? '正在准备共享屏幕'
+                    : '正在连接远程设备'}
+              </h3>
+              <p>
+                {detail ||
+                  (isHost
+                    ? '密码验证通过，正在建立端到端加密连接'
+                    : `控制码 ${groupCode(launch.code ?? '')} · 点对点直连`)}
+              </p>
+              {isHost && launch.code ? (
+                <div className="waiting-pin">
+                  <span>控制码</span>
+                  <strong>{groupCode(launch.code)}</strong>
+                  <span>控制密码</span>
+                  <strong>{launch.pin}</strong>
                 </div>
-                <h3>邀请对方连接</h3>
-                <p>将下方邀请码发送给需要控制这台设备的伙伴</p>
-                <div className="invite-box">
-                  <Textarea readOnly rows={4} value={inviteCode || '正在生成邀请码…'} />
-                  <div className="invite-actions">
-                    <CopyButton value={inviteCode} label="复制邀请码" />
-                    <span className="pin-inline-label">
-                      访问码 <strong>{launch.pin}</strong>
-                    </span>
+              ) : null}
+              {!isHost && phase === 'authenticating' ? (
+                <div className="auth-box">
+                  <span className="field-label">{authError || '正在验证控制密码'}</span>
+                  <div className="auth-row">
+                    <Input
+                      value={authPin}
+                      maxLength={12}
+                      onChange={(e) => setAuthPin(e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12))}
+                      data-local-input
+                    />
+                    <Button variant="secondary" onClick={retryAuth}>
+                      重试
+                    </Button>
                   </div>
                 </div>
-                <div className="answer-box">
-                  <span className="field-label">粘贴对方生成的应答码</span>
-                  <Textarea
-                    rows={3}
-                    value={answerInput}
-                    onChange={(e) => setAnswerInput(e.target.value)}
-                    placeholder="CD1-…"
-                    spellCheck={false}
-                  />
-                  <Button variant="primary" onClick={() => void applyAnswer()} disabled={busy || !answerInput.trim()}>
-                    {busy ? <Spinner size={14} /> : null} 建立连接
-                  </Button>
-                </div>
+              ) : null}
+              <div className="waiting-note">
+                {phase === 'error' ? <X size={14} /> : <Loader2 size={14} className="spin" />}
+                {phase === 'error' ? '请确认控制码与密码后重试' : '等待连接建立…'}
               </div>
-            ) : !isHost && launch.transport === 'manual' ? (
-              <div className="waiting-panel">
-                <div className="overlay-icon">
-                  <Upload size={22} />
-                </div>
-                <h3>把应答码发送给对方</h3>
-                <p>对方应用应答码后即可建立点对点连接</p>
-                <Textarea readOnly rows={6} value={answerCode || '正在生成应答码…'} />
-                <div className="invite-actions">
-                  <CopyButton value={answerCode} label="复制应答码" />
-                  <span className="pin-inline-label">
-                    访问码 <strong>{launch.pin}</strong>
-                  </span>
-                </div>
-                <div className="waiting-note">
-                  <Spinner size={14} /> 等待对方确认…
-                </div>
-              </div>
-            ) : (
-              <div className="waiting-panel compact-panel">
-                <div className={cn('overlay-icon', phase !== 'error' && 'pulse')}>
-                  {phase === 'preparing' ? <Spinner size={22} /> : <Monitor size={22} />}
-                </div>
-                <h3>{isHost ? '正在准备共享屏幕' : '正在连接远程设备'}</h3>
-                <p>
-                  {isHost
-                    ? '请稍候，正在获取屏幕画面'
-                    : launch.transport === 'lan'
-                      ? `${launch.peerName} · 点对点直连`
-                      : '正在交换加密参数'}
-                </p>
-                {isHost ? (
-                  <div className="waiting-pin">
-                    <span>访问码</span>
-                    <PinDigits pin={launch.pin} />
-                  </div>
-                ) : phase === 'authenticating' ? (
-                  <div className="auth-box">
-                    <span className="field-label">{authError || '正在验证访问码'}</span>
-                    <div className="auth-row">
-                      <Input
-                        value={authPin}
-                        inputMode="numeric"
-                        maxLength={8}
-                        onChange={(e) => setAuthPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
-                        data-local-input
-                      />
-                      <Button variant="secondary" onClick={retryAuth}>
-                        重试
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
-                <div className="waiting-note">
-                  <Loader2 size={14} className="spin" /> 等待连接建立…
-                </div>
-              </div>
-            )}
+              {phase === 'error' ? (
+                <Button variant="secondary" onClick={() => setLaunch(null)}>
+                  返回主页
+                </Button>
+              ) : null}
+            </div>
           </div>
         ) : null}
 

@@ -7,17 +7,25 @@ import {
   Square,
   X,
   ShieldCheck,
-  Radio,
   MonitorPlay,
   Wifi
 } from 'lucide-react'
 import { useApp } from './store'
-import { cn } from './lib/utils'
+import { cn, groupCode } from './lib/utils'
 import { initLanBus, clearSignals } from './lib/lan'
-import { Button, Modal, Switch, ToastStack, Spinner, CopyButton, DeviceAvatar } from './components/ui'
+import { open } from './lib/secure'
+import { Switch, ToastStack, Spinner, CopyButton } from './components/ui'
 import HomePage from './pages/Home'
 import SettingsPage from './pages/Settings'
 import SessionPage from './pages/Session'
+
+interface CodeOffer {
+  v: number
+  type: 'offer' | 'answer'
+  sdp: string
+  sessionId: string
+  from?: { id?: string; name?: string; os?: string }
+}
 
 function TitleBar() {
   const info = useApp((s) => s.info)
@@ -37,7 +45,7 @@ function TitleBar() {
           <MonitorPlay size={15} />
         </span>
         <span className="brand-word">cDesk</span>
-        <span className="brand-version">v{info?.version ?? '1.0.0'}</span>
+        <span className="brand-version">v{info?.version ?? '1.1.0'}</span>
       </div>
       <div className="titlebar-drag">
         {launch ? (
@@ -70,6 +78,7 @@ function Sidebar() {
   const hosting = useApp((s) => s.hosting)
   const setHosting = useApp((s) => s.setHosting)
   const pin = useApp((s) => s.pin)
+  const settings = useApp((s) => s.settings)
   const capabilities = useApp((s) => s.capabilities)
 
   return (
@@ -91,7 +100,7 @@ function Sidebar() {
             <span className={cn('state-orb', hosting && 'is-live')} />
             <div>
               <strong>{hosting ? '可被远程控制' : '本机未开放'}</strong>
-              <span>{hosting ? '局域网内设备可发现本机' : '开启后允许远程连接'}</span>
+              <span>{hosting ? '输入控制码与密码即可连接' : '开启后允许远程连接'}</span>
             </div>
           </div>
           <Switch checked={hosting} onChange={(next) => void setHosting(next)} label="允许远程控制" />
@@ -99,10 +108,15 @@ function Sidebar() {
         {hosting ? (
           <div className="host-pin">
             <div>
-              <span className="host-pin-label">访问码</span>
-              <strong className="host-pin-value">{pin}</strong>
+              <span className="host-pin-label">控制码</span>
+              <strong className="host-pin-value">{groupCode(settings?.deviceCode ?? '')}</strong>
+              <span className="host-pin-label">控制密码 · {pin}</span>
             </div>
-            <CopyButton value={pin} label="复制访问码" compact />
+            <CopyButton
+              value={`控制码：${groupCode(settings?.deviceCode ?? '')}\n密码：${pin}`}
+              label="复制"
+              compact
+            />
           </div>
         ) : (
           <div className="host-footnote">
@@ -143,86 +157,14 @@ function BootScreen() {
   )
 }
 
-function IncomingDialog() {
-  const incoming = useApp((s) => s.incoming)
-  const setIncoming = useApp((s) => s.setIncoming)
-  const setLaunch = useApp((s) => s.setLaunch)
-  const pin = useApp((s) => s.pin)
-  const displays = useApp((s) => s.displays)
-
-  if (!incoming) return null
-
-  const displayId = displays.find((d) => d.primary)?.id ?? displays[0]?.id ?? 0
-
-  return (
-    <Modal
-      open
-      width={430}
-      onClose={() => {
-        void window.cdesk.lan.close(incoming.connId)
-        setIncoming(null)
-      }}
-      title="远程协助请求"
-      subtitle="对方希望通过点对点直连控制这台设备"
-    >
-      <div className="incoming-device">
-        <DeviceAvatar platform={incoming.os} os={incoming.os} size={52} live />
-        <div className="incoming-meta">
-          <strong>{incoming.name}</strong>
-          <span>
-            {incoming.os || '未知系统'} · {incoming.address ?? '局域网'}
-          </span>
-        </div>
-        <span className="chip chip-accent">
-          <Radio size={12} />
-          直连
-        </span>
-      </div>
-      <div className="incoming-code">
-        <span>连接后对方需输入访问码</span>
-        <div className="pin-row">
-          <span className="pin-digits">{pin}</span>
-          <CopyButton value={pin} label="复制" compact />
-        </div>
-      </div>
-      <div className="modal-actions">
-        <Button
-          variant="ghost"
-          onClick={() => {
-            void window.cdesk.lan.close(incoming.connId)
-            setIncoming(null)
-          }}
-        >
-          拒绝
-        </Button>
-        <Button
-          variant="primary"
-          onClick={() => {
-            setLaunch({
-              role: 'host',
-              transport: 'lan',
-              connId: incoming.connId,
-              pin,
-              peerName: incoming.name,
-              peerOs: incoming.os,
-              displayId
-            })
-            setIncoming(null)
-          }}
-        >
-          接受并共享屏幕
-        </Button>
-      </div>
-    </Modal>
-  )
-}
-
 export default function App() {
   const booted = useApp((s) => s.booted)
   const init = useApp((s) => s.init)
   const launch = useApp((s) => s.launch)
   const page = useApp((s) => s.page)
-  const setIncoming = useApp((s) => s.setIncoming)
+  const hosting = useApp((s) => s.hosting)
+  const deviceCode = useApp((s) => s.settings?.deviceCode ?? '')
+  const pin = useApp((s) => s.pin)
 
   useEffect(() => {
     initLanBus()
@@ -236,18 +178,21 @@ export default function App() {
       if (!state.hosting) return
       if (state.launch) return
       if (conn.from.id && conn.from.id === state.settings?.deviceId) return
-      setIncoming({
+      const displayId = state.displays.find((d) => d.primary)?.id ?? state.displays[0]?.id ?? 0
+      // 无需对方确认：密码正确即由数据通道完成鉴权
+      state.setLaunch({
+        role: 'host',
+        transport: 'lan',
         connId: conn.connId,
-        name: conn.from.name || '未知设备',
-        os: conn.from.os || '未知系统',
-        address: conn.from.address,
-        ts: Date.now()
+        pin: state.pin,
+        peerName: conn.from.name || '未知设备',
+        peerOs: conn.from.os,
+        displayId
       })
+      state.toast('info', `${conn.from.name || '未知设备'} 正在连接`, '局域网直连，正在共享本机屏幕')
     })
     const offClosed = window.cdesk.lan.onClosed(({ connId }) => {
       clearSignals(connId)
-      const state = useApp.getState()
-      if (state.incoming?.connId === connId) state.setIncoming(null)
     })
     const offSettings = window.cdesk.settings.onChange((settings) => useApp.setState({ settings }))
     return () => {
@@ -256,7 +201,56 @@ export default function App() {
       offClosed()
       offSettings()
     }
-  }, [setIncoming])
+  }, [])
+
+  useEffect(() => {
+    const apply = (status: { connected: boolean; broker: string; error?: string }): void => {
+      useApp.getState().setSignalStatus(status.connected, status.broker, status.error)
+    }
+    const off = window.cdesk.signal.onStatus(apply)
+    void window.cdesk.signal.status().then(apply)
+    return off
+  }, [])
+
+  // 被控端：订阅控制码收件箱，密码可解密即自动接受，无需人工确认
+  useEffect(() => {
+    if (!hosting || !deviceCode || pin.length < 4) return
+    const topic = `cdesk/v1/${deviceCode}/inbox`
+    let disposed = false
+    const off = window.cdesk.signal.onMessage((msg) => {
+      if (msg.topic !== topic || disposed) return
+      void (async () => {
+        const state = useApp.getState()
+        if (state.launch) return
+        const offer = await open<CodeOffer>(msg.payload, pin, deviceCode)
+        if (!offer || offer.type !== 'offer' || !offer.sessionId) return
+        if (offer.from?.id && offer.from.id === state.settings?.deviceId) return
+        const latest = useApp.getState()
+        if (latest.launch) return
+        const displayId = latest.displays.find((d) => d.primary)?.id ?? latest.displays[0]?.id ?? 0
+        latest.setLaunch({
+          role: 'host',
+          transport: 'code',
+          pin,
+          code: deviceCode,
+          sessionId: offer.sessionId,
+          offerSdp: offer.sdp,
+          peerName: offer.from?.name || '远程设备',
+          peerOs: offer.from?.os,
+          displayId
+        })
+        latest.toast('info', `${offer.from?.name || '远程设备'} 正在连接`, '密码验证通过，已自动接受')
+      })()
+    })
+    void window.cdesk.signal.subscribe(topic).catch((err) => {
+      console.error('信令订阅失败', err)
+    })
+    return () => {
+      disposed = true
+      off()
+      void window.cdesk.signal.unsubscribe(topic).catch(() => {})
+    }
+  }, [hosting, deviceCode, pin])
 
   if (!booted) {
     return (
@@ -291,7 +285,6 @@ export default function App() {
         </main>
       </div>
       <ToastStack />
-      <IncomingDialog />
     </div>
   )
 }

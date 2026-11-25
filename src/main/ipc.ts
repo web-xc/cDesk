@@ -28,9 +28,11 @@ import type {
 } from '@shared/types'
 import { getSettings, setSettings } from './store'
 import { LanService } from './lan'
+import { SignalService } from './signal'
 import { backendName, hasBackend, injectKey, injectMouse, injectText } from './input'
 
 const lan = new LanService()
+const signal = new SignalService()
 let chosenDisplayId: number | null = null
 let sleepBlockerId: number | null = null
 
@@ -396,8 +398,20 @@ export function registerIpc(): void {
     }
   })
 
+  ipcMain.handle('signal:status', () => signal.getStatus())
+  ipcMain.handle('signal:connect', () => signal.connect())
+  ipcMain.handle('signal:subscribe', (_e, topic: string) => signal.subscribe(String(topic)))
+  ipcMain.handle('signal:unsubscribe', (_e, topic: string) => signal.unsubscribe(String(topic)))
+  ipcMain.handle('signal:publish', (_e, topic: string, payload: string) =>
+    signal.publish(String(topic), String(payload))
+  )
+
   lan.on('peers', (peers) => broadcast('lan:peers', peers))
   lan.on('conn', (conn) => broadcast('lan:conn', conn))
   lan.on('message', (msg) => broadcast('lan:message', msg))
   lan.on('closed', (msg) => broadcast('lan:closed', msg))
+
+  signal.on('message', (msg) => broadcast('signal:message', msg))
+  signal.on('status', (status) => broadcast('signal:status', status))
+  signal.start()
 }

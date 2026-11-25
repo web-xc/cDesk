@@ -13,7 +13,9 @@ import type {
   Peer,
   SaveFileRequest,
   SaveFileResult,
-  Settings
+  Settings,
+  SignalMessage,
+  SignalStatus
 } from '@shared/types'
 
 function on<T>(channel: string, cb: (payload: T) => void): () => void {
@@ -89,6 +91,17 @@ const api: CdeskApi = {
     onConn: (cb) => on<IncomingConnection>('lan:conn', cb),
     onMessage: (cb) => on<{ connId: string; data: unknown }>('lan:message', cb),
     onClosed: (cb) => on<{ connId: string }>('lan:closed', cb)
+  },
+  signal: {
+    status: () => ipcRenderer.invoke('signal:status') as Promise<SignalStatus>,
+    connect: () => ipcRenderer.invoke('signal:connect') as Promise<SignalStatus>,
+    subscribe: (topic: string) => ipcRenderer.invoke('signal:subscribe', topic) as Promise<void>,
+    unsubscribe: (topic: string) =>
+      ipcRenderer.invoke('signal:unsubscribe', topic) as Promise<void>,
+    publish: (topic: string, payload: string) =>
+      ipcRenderer.invoke('signal:publish', topic, payload) as Promise<void>,
+    onMessage: (cb) => on<SignalMessage>('signal:message', cb),
+    onStatus: (cb) => on<SignalStatus>('signal:status', cb)
   },
   capture: {
     chooseDisplay: (id: number) =>

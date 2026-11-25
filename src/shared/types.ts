@@ -4,17 +4,34 @@ export type ThemeMode = 'dark' | 'light' | 'system'
 
 export interface Settings {
   deviceId: string
+  /** 9 位固定控制码，由 deviceId 派生，永久不变 */
+  deviceCode: string
   deviceName: string
   theme: ThemeMode
   pinMode: 'random' | 'fixed'
+  /** 控制密码：随机模式下由客户端生成，自定义模式下为用户设置值 */
   fixedPin: string
   quality: QualityPreset
   clipboardSync: boolean
   stunEnabled: boolean
+  turnUrl: string
+  turnUser: string
+  turnPass: string
   launchAtLogin: boolean
   showStats: boolean
   viewOnly: boolean
   reduceMotion: boolean
+}
+
+export interface SignalStatus {
+  connected: boolean
+  broker: string
+  error?: string
+}
+
+export interface SignalMessage {
+  topic: string
+  payload: string
 }
 
 export interface AppInfo {
@@ -182,6 +199,15 @@ export interface CdeskApi {
     onConn(cb: (conn: IncomingConnection) => void): () => void
     onMessage(cb: (msg: { connId: string; data: unknown }) => void): () => void
     onClosed(cb: (msg: { connId: string }) => void): () => void
+  }
+  signal: {
+    status(): Promise<SignalStatus>
+    connect(): Promise<SignalStatus>
+    subscribe(topic: string): Promise<void>
+    unsubscribe(topic: string): Promise<void>
+    publish(topic: string, payload: string): Promise<void>
+    onMessage(cb: (msg: SignalMessage) => void): () => void
+    onStatus(cb: (status: SignalStatus) => void): () => void
   }
   capture: {
     chooseDisplay(id: number): Promise<void>
