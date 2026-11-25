@@ -1,0 +1,24 @@
+{
+  "title": "cDesk",
+  "window": {
+    "size": {
+      "width": 660,
+      "height": 400
+    }
+  },
+  "contents": [
+    {
+      "x": 180,
+      "y": 200,
+      "type": "file",
+      "path": "release/mac-universal/cDesk.app"
+    },
+    {
+      "x": 480,
+      "y": 200,
+      "type": "link",
+      "path": "/Applications"
+    }
+  ],
+  "format": "UDZO"
+}

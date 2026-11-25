@@ -1,0 +1,52 @@
+appId: com.cdesk.app
+productName: cDesk
+copyright: Copyright © 2026 cDesk
+
+directories:
+  buildResources: build
+  output: release
+
+files:
+  - out/**/*
+  - package.json
+
+asarUnpack:
+  - node_modules/koffi/**
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.png
+  artifactName: cDesk-${version}-${arch}-setup.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: cDesk
+
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  category: public.app-category.utilities
+  icon: build/icon.png
+  darkModeSupport: true
+  artifactName: cDesk-${version}-${arch}.${ext}
+  extendInfo:
+    NSCameraUsageDescription: cDesk 需要屏幕录制权限以共享桌面。
+    NSMicrophoneUsageDescription: cDesk 需要麦克风权限以传输系统音频。
+
+dmg:
+  title: cDesk
+  contents:
+    - x: 140
+      y: 200
+      type: file
+    - x: 400
+      y: 200
+      type: link
+      path: /Applications

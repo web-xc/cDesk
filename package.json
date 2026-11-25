@@ -1,0 +1,42 @@
+{
+  "name": "cdesk",
+  "version": "1.0.0",
+  "description": "cDesk — 点对点远程桌面（无服务器 / 直连）",
+  "main": "./out/main/index.js",
+  "author": "cDesk",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "start": "electron-vite preview",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "pack:win": "npm run build && electron-builder --win --dir",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:mac:dmg": "bash scripts/build-mac-dmg.sh",
+    "icon": "node scripts/gen-icon.mjs"
+  },
+  "dependencies": {
+    "koffi": "^3.3.8"
+  },
+  "optionalDependencies": {
+    "appdmg": "^0.6.6"
+  },
+  "devDependencies": {
+    "@swc/core": "^1.13.5",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^45.5.0",
+    "electron-builder": "^26.18.0",
+    "electron-vite": "^6.0.0",
+    "lucide-react": "^1.80.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.8",
+    "zustand": "^5.1.0"
+  }
+}
