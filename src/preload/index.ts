@@ -36,7 +36,12 @@ const api: CdeskApi = {
     openExternal: (url: string) => ipcRenderer.invoke('app:open-external', url) as Promise<void>,
     relaunch: () => ipcRenderer.invoke('app:relaunch') as Promise<void>,
     setLaunchAtLogin: (on: boolean) =>
-      ipcRenderer.invoke('app:launch-at-login', on) as Promise<void>
+      ipcRenderer.invoke('app:launch-at-login', on) as Promise<void>,
+    latestRelease: () => ipcRenderer.invoke('app:latest-release') as Promise<{
+      version: string
+      url: string
+      notes: string
+    } | null>
   },
   window: {
     minimize: () => ipcRenderer.invoke('window:minimize') as Promise<void>,

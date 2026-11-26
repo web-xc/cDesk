@@ -292,7 +292,7 @@ export default function App() {
 
   if (!booted) {
     return (
-      <div className="shell">
+      <div className="shell shell-boot">
         <div className="ambient" aria-hidden>
           <span className="orb orb-a" />
           <span className="orb orb-b" />

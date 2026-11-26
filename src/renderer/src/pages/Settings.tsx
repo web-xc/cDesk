@@ -29,6 +29,7 @@ export default function SettingsPage() {
   const patchSettings = useApp((s) => s.patchSettings)
   const toast = useApp((s) => s.toast)
   const latestVersion = useApp((s) => s.latestVersion)
+  const latestReleaseUrl = useApp((s) => s.latestReleaseUrl)
   const checkUpdates = useApp((s) => s.checkUpdates)
   const [name, setName] = useState(settings?.deviceName ?? '')
   const [fixedPin, setFixedPin] = useState(settings?.fixedPin ?? '')
@@ -361,17 +362,42 @@ export default function SettingsPage() {
             <div><span>Chromium</span><strong>{info?.chrome}</strong></div>
             <div><span>架构</span><strong>P2P / WebRTC</strong></div>
           </div>
+          {latestVersion && latestVersion !== info?.version ? (
+            <div className="update-banner">
+              <div>
+                <strong>发现新版本 v{latestVersion}</strong>
+                <span>当前 v{info?.version}，建议更新以获得最佳体验</span>
+              </div>
+              <Button
+                variant="primary"
+                size="sm"
+                icon={<ExternalLink size={13} />}
+                onClick={() =>
+                  void window.cdesk.app.openExternal(
+                    latestReleaseUrl || 'https://github.com/web-xc/cDesk/releases/latest'
+                  )
+                }
+              >
+                前往下载
+              </Button>
+            </div>
+          ) : null}
           <div className="about-actions">
             <Button
               variant="ghost"
               size="sm"
               icon={<ExternalLink size={13} />}
-              onClick={() => void window.cdesk.app.openExternal('https://webrtc.org/')}
+              onClick={() => void window.cdesk.app.openExternal('https://github.com/web-xc/cDesk')}
             >
-              WebRTC 技术
+              GitHub 仓库
             </Button>
-            <Button variant="ghost" size="sm" icon={<BellRing size={13} />} onClick={() => void checkUpdates()}>
-              {latestVersion ? `检查更新 (v${latestVersion})` : '检查更新'}
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<BellRing size={13} />}
+              onClick={() => void checkUpdates(false)}
+            >
+              {latestVersion ? `已检查 · v${latestVersion}` : '检查更新'}
             </Button>
           </div>
         </section>

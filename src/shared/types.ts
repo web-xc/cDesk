@@ -159,6 +159,7 @@ export interface CdeskApi {
     openExternal(url: string): Promise<void>
     relaunch(): Promise<void>
     setLaunchAtLogin(on: boolean): Promise<void>
+    latestRelease(): Promise<{ version: string; url: string; notes: string } | null>
   }
   window: {
     minimize(): Promise<void>

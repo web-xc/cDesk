@@ -54,6 +54,7 @@ interface AppState {
   signalBroker: string
   signalError: string
   latestVersion: string | null
+  latestReleaseUrl: string | null
   toasts: Toast[]
 
   init(): Promise<void>
@@ -72,7 +73,7 @@ interface AppState {
   patchSettings(patch: Partial<Settings>): Promise<void>
   toast(kind: Toast['kind'], title: string, desc?: string): void
   dismissToast(id: string): void
-  checkUpdates(): Promise<void>
+  checkUpdates(silent?: boolean): Promise<void>
 }
 
 function resolvePin(settings: Settings | null): string {
@@ -96,6 +97,7 @@ export const useApp = create<AppState>((set, get) => ({
   signalBroker: '',
   signalError: '',
   latestVersion: null,
+  latestReleaseUrl: null,
   toasts: [],
 
   async init() {
@@ -261,14 +263,13 @@ export const useApp = create<AppState>((set, get) => ({
     set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) }))
   },
 
-  async checkUpdates() {
+  async checkUpdates(silent = true) {
     try {
-      const res = await fetch('https://api.github.com/repos/web-xc/cDesk/releases/latest')
-      if (!res.ok) return
-      const data = (await res.json()) as { tag_name?: string }
-      const tag = (data.tag_name ?? '').replace(/^v/, '')
-      if (!tag) return
-      const current = get().info?.version ?? '0.0.0'
+      const release = await window.cdesk.app.latestRelease()
+      if (!release?.version) {
+        if (!silent) get().toast('error', '检查更新失败', '无法访问 GitHub Release，请检查网络')
+        return
+      }
       const cmp = (a: string, b: string) => {
         const pa = a.split('.').map(Number)
         const pb = b.split('.').map(Number)
@@ -279,12 +280,15 @@ export const useApp = create<AppState>((set, get) => ({
         }
         return 0
       }
-      set({ latestVersion: tag })
-      if (cmp(tag, current) > 0) {
-        get().toast('info', `有新版本 v${tag} 可用`, '前往 GitHub Release 下载更新')
+      const current = get().info?.version ?? '0.0.0'
+      set({ latestVersion: release.version, latestReleaseUrl: release.url })
+      if (cmp(release.version, current) > 0) {
+        get().toast('info', `发现新版本 v${release.version}`, '前往 GitHub Release 下载更新')
+      } else if (!silent) {
+        get().toast('success', '已是最新版本', `当前 v${current} 已是最新`)
       }
     } catch {
-      /* 静默失败 */
+      if (!silent) get().toast('error', '检查更新失败', '请稍后重试')
     }
   }
 }))

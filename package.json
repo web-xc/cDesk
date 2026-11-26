@@ -12,9 +12,9 @@
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "pack:win": "npm run build && electron-builder --win --dir",
-    "dist:win": "npm run build && electron-builder --win",
-    "dist:mac": "npm run build && electron-builder --mac",
-    "dist:mac:dmg": "bash scripts/build-mac-dmg.sh",
+    "dist:win": "npm run build && electron-builder --win --publish never",
+    "dist:mac": "npm run build && electron-builder --mac --publish never",
+    "dist:mac:dmg": "npm run build && electron-builder --mac dmg --publish never",
     "icon": "node scripts/gen-icon.mjs"
   },
   "dependencies": {

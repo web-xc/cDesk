@@ -22,7 +22,7 @@ function createMainWindow(): BrowserWindow {
     minWidth: 1040,
     minHeight: 700,
     show: false,
-    backgroundColor: '#070A11',
+    backgroundColor: '#F4F7FC',
     title: 'cDesk',
     ...(isMac
       ? {

@@ -5,6 +5,7 @@ import {
   desktopCapturer,
   dialog,
   ipcMain,
+  net,
   powerSaveBlocker,
   screen,
   session,
@@ -35,6 +36,11 @@ const lan = new LanService()
 const signal = new SignalService()
 let chosenDisplayId: number | null = null
 let sleepBlockerId: number | null = null
+
+let releaseCache: {
+  at: number
+  value: { version: string; url: string; notes: string }
+} | null = null
 
 interface Writer {
   stream: fs.WriteStream
@@ -187,6 +193,39 @@ export function registerIpc(): void {
 
   ipcMain.handle('app:launch-at-login', (_e, on: boolean) => {
     setSettings({ launchAtLogin: !!on })
+  })
+
+  // GitHub Release 版本检查放在主进程，避免渲染层 CSP 限制 connect-src
+  ipcMain.handle('app:latest-release', async () => {
+    if (releaseCache && Date.now() - releaseCache.at < 10 * 60 * 1000) {
+      return releaseCache.value
+    }
+    try {
+      const res = await net.fetch('https://api.github.com/repos/web-xc/cDesk/releases/latest', {
+        headers: {
+          Accept: 'application/vnd.github+json',
+          'User-Agent': `cDesk/${app.getVersion()}`
+        }
+      })
+      if (!res.ok) return releaseCache?.value ?? null
+      const data = (await res.json()) as {
+        tag_name?: string
+        html_url?: string
+        body?: string
+      }
+      const version = (data.tag_name ?? '').replace(/^v/i, '')
+      if (!version) return null
+      const value = {
+        version,
+        url: data.html_url ?? 'https://github.com/web-xc/cDesk/releases/latest',
+        notes: data.body ?? ''
+      }
+      releaseCache = { at: Date.now(), value }
+      return value
+    } catch (err) {
+      console.error('[update] check failed:', err)
+      return releaseCache?.value ?? null
+    }
   })
 
   ipcMain.handle('settings:get', (): Settings => getSettings())
