@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import {
   ArrowRight,
   ClipboardPaste,
@@ -200,11 +200,11 @@ export default function HomePage() {
   const startCodeControl = () => {
     const result = parseControlInfo(controlInfo)
     if (!result) {
-      toast('error', '远程操控信息格式不正确', '请粘贴「控制码 + 密码」，例如：123 456 789 abc123')
+      toast('error', '远程操控信息格式不正确', '请粘贴「远程码 + 密码」，例如：123 456 789 abc123')
       return
     }
     pushRecent({
-      name: `控制码 ${groupCode(result.code)}`,
+      name: `远程码 ${groupCode(result.code)}`,
       os: 'cDesk',
       ts: Date.now(),
       transport: 'code',
@@ -230,7 +230,7 @@ export default function HomePage() {
             <Sparkles size={12} /> P2P REMOTE DESKTOP
           </span>
           <h1>你的设备，随时在手中</h1>
-          <p>控制码永久固定，输入控制码与密码即刻直连，画质数据端到端加密。</p>
+          <p>远程码永久固定，输入远程码与密码即刻直连，画质数据端到端加密。</p>
         </div>
         <div className="identity-card">
           <DeviceAvatar platform={info?.platform} os={info?.osName} size={46} live={hosting} />
@@ -240,7 +240,7 @@ export default function HomePage() {
               {info?.osName} · {groupCode(deviceCode)}
             </span>
           </div>
-          <CopyButton value={groupCode(deviceCode)} label="复制控制码" compact />
+          <CopyButton value={groupCode(deviceCode)} label="复制远程码" compact />
         </div>
       </header>
 
@@ -249,13 +249,13 @@ export default function HomePage() {
           <div className="card-head">
             <div>
               <h2>连接远程设备</h2>
-              <p className="card-sub">粘贴对方的控制码与密码，或连接同一局域网内的设备</p>
+              <p className="card-sub">粘贴对方的远程码与密码，或连接同一局域网内的设备</p>
             </div>
             <Segmented
               value={mode}
               onChange={setMode}
               options={[
-                { value: 'code', label: '控制码' },
+                { value: 'code', label: '远程码' },
                 { value: 'lan', label: '局域网' }
               ]}
             />
@@ -267,7 +267,7 @@ export default function HomePage() {
             <div className="code-form">
               <div className="code-steps">
                 <span className="step-pill">
-                  <KeyRound size={12} /> 控制码固定不变
+                  <KeyRound size={12} /> 远程码固定不变
                 </span>
                 <span className="step-pill">
                   <Lock size={12} /> 密码正确即直连
@@ -279,7 +279,7 @@ export default function HomePage() {
               </div>
               <Textarea
                 rows={3}
-                placeholder={'粘贴对方发来的远程操控信息，例如：\n控制码：123 456 789\n密码：abc123'}
+                placeholder={'粘贴对方发来的远程操控信息，例如：\n远程码：123 456 789\n密码：abc123'}
                 value={controlInfo}
                 onChange={(e) => setControlInfo(e.target.value)}
                 spellCheck={false}
@@ -299,8 +299,8 @@ export default function HomePage() {
               </div>
               <p className="code-hint">
                 {parsed
-                  ? `将连接控制码 ${groupCode(parsed.code)}，无需对方确认。`
-                  : '控制码为对方电脑 9 位固定号码；密码默认随机，对方可自定义。'}
+                  ? `将连接远程码 ${groupCode(parsed.code)}，无需对方确认。`
+                  : '远程码为对方电脑 9 位固定号码；密码默认随机，对方可自定义。'}
               </p>
             </div>
           )}
@@ -318,15 +318,15 @@ export default function HomePage() {
             <h2>{hosting ? '正在共享这台设备' : '共享这台设备'}</h2>
             <p>
               {hosting
-                ? '把下面的控制码与密码发给对方，对方粘贴后即可直接连接，无需你确认。'
-                : '开启后，对方输入本机控制码与密码即可远程控制这台电脑。'}
+                ? '把下面的远程码与密码发给对方，对方粘贴后即可直接连接，无需你确认。'
+                : '开启后，对方输入本机远程码与密码即可远程控制这台电脑。'}
             </p>
           </div>
 
           {hosting ? (
             <>
               <div className="pin-block">
-                <span className="pin-caption">控制码 · 永久不变</span>
+                <span className="pin-caption">远程码 · 永久不变</span>
                 <div className="control-code">{groupCode(deviceCode)}</div>
                 <span className="pin-caption">控制密码</span>
                 <div className="control-password">{pin}</div>
@@ -388,7 +388,7 @@ export default function HomePage() {
                   <div className="recent-meta">
                     <strong>{item.name}</strong>
                     <span>
-                      {item.transport === 'lan' ? '局域网直连' : '控制码直连'} · {timeAgo(item.ts)}
+                      {item.transport === 'lan' ? '局域网直连' : '远程码直连'} · {timeAgo(item.ts)}
                     </span>
                   </div>
                   <span className="chip">{item.role === 'viewer' ? '主控' : '被控'}</span>

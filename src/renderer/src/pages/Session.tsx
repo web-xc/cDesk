@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft,
   Camera,
@@ -565,11 +565,11 @@ export default function SessionPage({ launch }: { launch: SessionLaunch }) {
                 {detail ||
                   (isHost
                     ? '密码验证通过，正在建立端到端加密连接'
-                    : `控制码 ${groupCode(launch.code ?? '')} · 点对点直连`)}
+                    : `远程码 ${groupCode(launch.code ?? '')} · 点对点直连`)}
               </p>
               {isHost && launch.code ? (
                 <div className="waiting-pin">
-                  <span>控制码</span>
+                  <span>远程码</span>
                   <strong>{groupCode(launch.code)}</strong>
                   <span>控制密码</span>
                   <strong>{launch.pin}</strong>
@@ -593,7 +593,7 @@ export default function SessionPage({ launch }: { launch: SessionLaunch }) {
               ) : null}
               <div className="waiting-note">
                 {phase === 'error' ? <X size={14} /> : <Loader2 size={14} className="spin" />}
-                {phase === 'error' ? '请确认控制码与密码后重试' : '等待连接建立…'}
+                {phase === 'error' ? '请确认远程码与密码后重试' : '等待连接建立…'}
               </div>
               {phase === 'error' ? (
                 <Button variant="secondary" onClick={() => setLaunch(null)}>

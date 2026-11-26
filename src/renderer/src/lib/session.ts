@@ -1,4 +1,4 @@
-import type { QualityPreset } from '@shared/types'
+﻿import type { QualityPreset } from '@shared/types'
 import { QUALITY_PRESETS } from './quality'
 import { open, seal } from './secure'
 import { clamp, uid } from './utils'
@@ -287,7 +287,7 @@ export class RemoteSession {
     this.setPhase('connecting')
   }
 
-  /** 被控端：接受控制码 offer，并把加密应答发布到对方的会话主题 */
+  /** 被控端：接受远程码 offer，并把加密应答发布到对方的会话主题 */
   async acceptCodeOffer(
     sdp: string,
     sessionId: string,
@@ -357,7 +357,7 @@ export class RemoteSession {
     this.signal({ kind: 'offer', sdp: pc.localDescription?.sdp ?? '' } satisfies SignalPayload)
   }
 
-  /** 主控端：向固定控制码发布加密 offer，并等待加密 answer */
+  /** 主控端：向固定远程码发布加密 offer，并等待加密 answer */
   async connectCode(code: string, password: string): Promise<void> {
     this.code = code
     this.pin = password
@@ -421,7 +421,7 @@ export class RemoteSession {
     this.codeTimer = setTimeout(() => {
       this.codeTimer = null
       if (this.destroyed || this.phase === 'connected' || this.phase === 'closed') return
-      this.fail('控制码不存在或密码错误，请确认对方已开启「允许远程控制」')
+      this.fail('远程码不存在或密码错误，请确认对方已开启「允许远程控制」')
     }, 16000)
   }
 
@@ -748,16 +748,16 @@ export class RemoteSession {
       if (video) {
         video.contentHint = 'detail'
         try {
-          const params = this.videoSender?.getParameters()
-          if (params && this.videoSender) {
-            if (!params.encodings || params.encodings.length === 0) params.encodings = [{}]
-            params.encodings[0].maxBitrate = preset.bitrate
-            params.encodings[0].maxFramerate = preset.fps
-            void this.videoSender.setParameters(params).catch(() => {})
-          }
-        } catch {
-          /* ignore */
-        }
+          await video.applyConstraints({ frameRate: { ideal: preset.fps, max: 60 } })
+        } catch { /* 平台不支持更高约束时忽略 */ }
+        void this.videoSender?.setParameters({
+          ...this.videoSender.getParameters(),
+          encodings: [{
+            ...(this.videoSender.getParameters().encodings?.[0] ?? {}),
+            maxBitrate: preset.bitrate * 1.2,
+            maxFramerate: preset.fps
+          }]
+        }).catch(() => {})
       }
       return stream
     } catch (err) {

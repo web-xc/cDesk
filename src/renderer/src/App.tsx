@@ -1,20 +1,22 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import {
+  Ban,
+  Check,
   House,
   Info,
-  Settings2,
   Minus,
-  Square,
-  X,
-  ShieldCheck,
   MonitorPlay,
-  Wifi
+  Settings2,
+  ShieldCheck,
+  Square,
+  Wifi,
+  X
 } from 'lucide-react'
 import { useApp } from './store'
 import { cn, groupCode } from './lib/utils'
 import { initLanBus, clearSignals } from './lib/lan'
 import { open } from './lib/secure'
-import { Switch, ToastStack, Spinner, CopyButton } from './components/ui'
+import { Switch, ToastStack, Spinner, CopyButton, Modal, Button, DeviceAvatar } from './components/ui'
 import HomePage from './pages/Home'
 import SettingsPage from './pages/Settings'
 import SessionPage from './pages/Session'
@@ -100,7 +102,7 @@ function Sidebar() {
             <span className={cn('state-orb', hosting && 'is-live')} />
             <div>
               <strong>{hosting ? '可被远程控制' : '本机未开放'}</strong>
-              <span>{hosting ? '输入控制码与密码即可连接' : '开启后允许远程连接'}</span>
+              <span>{hosting ? '输入远程码与密码即可连接' : '开启后允许远程连接'}</span>
             </div>
           </div>
           <Switch checked={hosting} onChange={(next) => void setHosting(next)} label="允许远程控制" />
@@ -108,12 +110,12 @@ function Sidebar() {
         {hosting ? (
           <div className="host-pin">
             <div>
-              <span className="host-pin-label">控制码</span>
+              <span className="host-pin-label">远程码</span>
               <strong className="host-pin-value">{groupCode(settings?.deviceCode ?? '')}</strong>
               <span className="host-pin-label">控制密码 · {pin}</span>
             </div>
             <CopyButton
-              value={`控制码：${groupCode(settings?.deviceCode ?? '')}\n密码：${pin}`}
+              value={`远程码：${groupCode(settings?.deviceCode ?? '')}\n密码：${pin}`}
               label="复制"
               compact
             />
@@ -165,6 +167,12 @@ export default function App() {
   const hosting = useApp((s) => s.hosting)
   const deviceCode = useApp((s) => s.settings?.deviceCode ?? '')
   const pin = useApp((s) => s.pin)
+  const pending = useApp((s) => s.pending)
+  const autoAccept = useApp((s) => s.settings?.autoAccept ?? false)
+  const acceptPending = useApp((s) => s.acceptPending)
+  const rejectPending = useApp((s) => s.rejectPending)
+  const setPending = useApp((s) => s.setPending)
+  const checkUpdates = useApp((s) => s.checkUpdates)
 
   useEffect(() => {
     initLanBus()
@@ -175,33 +183,50 @@ export default function App() {
     const offPeers = window.cdesk.lan.onPeers((peers) => useApp.getState().setPeers(peers))
     const offConn = window.cdesk.lan.onConn((conn) => {
       const state = useApp.getState()
-      if (!state.hosting) return
-      if (state.launch) return
+      if (!state.hosting || state.launch || state.pending) return
       if (conn.from.id && conn.from.id === state.settings?.deviceId) return
-      const displayId = state.displays.find((d) => d.primary)?.id ?? state.displays[0]?.id ?? 0
-      // 无需对方确认：密码正确即由数据通道完成鉴权
-      state.setLaunch({
-        role: 'host',
-        transport: 'lan',
-        connId: conn.connId,
-        pin: state.pin,
-        peerName: conn.from.name || '未知设备',
-        peerOs: conn.from.os,
-        displayId
-      })
-      state.toast('info', `${conn.from.name || '未知设备'} 正在连接`, '局域网直连，正在共享本机屏幕')
+      if (state.settings?.autoAccept) {
+        const displayId = state.displays.find((d) => d.primary)?.id ?? state.displays[0]?.id ?? 0
+        state.setLaunch({
+          role: 'host', transport: 'lan', connId: conn.connId, pin: state.pin,
+          peerName: conn.from.name || '未知设备', peerOs: conn.from.os, displayId
+        })
+        state.toast('info', `${conn.from.name || '未知设备'} 正在连接`, '已自动接受')
+      } else {
+        state.setPending({
+          kind: 'lan', connId: conn.connId, peerName: conn.from.name || '未知设备',
+          peerOs: conn.from.os, ts: Date.now(), deadline: Date.now() + 15000
+        })
+      }
     })
     const offClosed = window.cdesk.lan.onClosed(({ connId }) => {
       clearSignals(connId)
+      const state = useApp.getState()
+      if (state.pending?.connId === connId) state.setPending(null)
     })
     const offSettings = window.cdesk.settings.onChange((settings) => useApp.setState({ settings }))
     return () => {
-      offPeers()
-      offConn()
-      offClosed()
-      offSettings()
+      offPeers(); offConn(); offClosed(); offSettings()
     }
   }, [])
+
+  // 15s 超时自动拒绝 pending 请求
+  useEffect(() => {
+    if (!pending) return
+    const t = setTimeout(() => {
+      const state = useApp.getState()
+      if (state.pending && Date.now() >= state.pending.deadline) {
+        state.rejectPending()
+        state.toast('info', '连接请求已超时')
+      }
+    }, Math.max(0, pending.deadline - Date.now()))
+    return () => clearTimeout(t)
+  }, [pending])
+
+  // 启动后检查一次更新
+  useEffect(() => {
+    if (booted) void checkUpdates()
+  }, [booted, checkUpdates])
 
   useEffect(() => {
     const apply = (status: { connected: boolean; broker: string; error?: string }): void => {
@@ -212,7 +237,7 @@ export default function App() {
     return off
   }, [])
 
-  // 被控端：订阅控制码收件箱，密码可解密即自动接受，无需人工确认
+  // 被控端：订阅远程码收件箱，密码可解密即自动接受，无需人工确认
   useEffect(() => {
     if (!hosting || !deviceCode || pin.length < 4) return
     const topic = `cdesk/v1/${deviceCode}/inbox`
@@ -221,25 +246,38 @@ export default function App() {
       if (msg.topic !== topic || disposed) return
       void (async () => {
         const state = useApp.getState()
-        if (state.launch) return
+        if (state.launch || state.pending) return
         const offer = await open<CodeOffer>(msg.payload, pin, deviceCode)
         if (!offer || offer.type !== 'offer' || !offer.sessionId) return
         if (offer.from?.id && offer.from.id === state.settings?.deviceId) return
-        const latest = useApp.getState()
-        if (latest.launch) return
-        const displayId = latest.displays.find((d) => d.primary)?.id ?? latest.displays[0]?.id ?? 0
-        latest.setLaunch({
-          role: 'host',
-          transport: 'code',
-          pin,
-          code: deviceCode,
-          sessionId: offer.sessionId,
-          offerSdp: offer.sdp,
-          peerName: offer.from?.name || '远程设备',
-          peerOs: offer.from?.os,
-          displayId
-        })
-        latest.toast('info', `${offer.from?.name || '远程设备'} 正在连接`, '密码验证通过，已自动接受')
+        if (state.settings?.autoAccept) {
+          const latest = useApp.getState()
+          if (latest.launch) return
+          const displayId = latest.displays.find((d) => d.primary)?.id ?? latest.displays[0]?.id ?? 0
+          latest.setLaunch({
+            role: 'host',
+            transport: 'code',
+            pin,
+            code: deviceCode,
+            sessionId: offer.sessionId,
+            offerSdp: offer.sdp,
+            peerName: offer.from?.name || '远程设备',
+            peerOs: offer.from?.os,
+            displayId
+          })
+          latest.toast('info', `${offer.from?.name || '远程设备'} 正在连接`, '密码验证通过，已自动接受')
+        } else {
+          state.setPending({
+            kind: 'code',
+            code: deviceCode,
+            sessionId: offer.sessionId,
+            offerSdp: offer.sdp,
+            peerName: offer.from?.name || '远程设备',
+            peerOs: offer.from?.os,
+            ts: Date.now(),
+            deadline: Date.now() + 30000
+          })
+        }
       })()
     })
     void window.cdesk.signal.subscribe(topic).catch((err) => {
@@ -284,6 +322,32 @@ export default function App() {
           )}
         </main>
       </div>
+      {pending && !launch ? (
+        <Modal
+          open
+          width={440}
+          onClose={() => rejectPending()}
+          title="远程协助请求"
+          subtitle={`${pending.kind === 'code' ? '远程码直连' : '局域网直连'} · 15 秒内未响应将自动拒绝`}
+        >
+          <div className="incoming-device">
+            <DeviceAvatar platform={pending.peerOs} os={pending.peerOs} size={52} live />
+            <div className="incoming-meta">
+              <strong>{pending.peerName}</strong>
+              <span>{pending.peerOs || '未知系统'}</span>
+            </div>
+            <span className="chip chip-accent">
+              <Wifi size={12} />
+              密码已验证
+            </span>
+          </div>
+          <p className="incoming-hint">对方已正确输入远程码与控制密码，是否接受远程协助？</p>
+          <div className="modal-actions">
+            <Button variant="ghost" onClick={() => rejectPending()} icon={<Ban size={16} />}>拒绝</Button>
+            <Button variant="primary" onClick={() => acceptPending()} icon={<Check size={16} />}>接受并共享屏幕</Button>
+          </div>
+        </Modal>
+      ) : null}
       <ToastStack />
     </div>
   )

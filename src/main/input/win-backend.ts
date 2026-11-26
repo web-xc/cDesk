@@ -3,7 +3,7 @@ import { windowsExtended, windowsVk } from './keymap'
 
 export interface InjectableMouse {
   kind: 'move' | 'down' | 'up' | 'wheel'
-  /** 归一化到整个虚拟桌面的绝对坐标 0..1 */
+  /** 主屏幕原点为基准的逻辑像素坐标（与 Electron screen.getAllDisplays() 返回的 bounds 同体系） */
   absX: number
   absY: number
   button: number
@@ -41,6 +41,7 @@ export function createWindowsBackend() {
   const mouseEvent = user32.func(
     'void mouse_event(int32 dwFlags, int32 dx, int32 dy, int32 dwData, uintptr dwExtraInfo)'
   )
+  const SetCursorPos = user32.func('int32 SetCursorPos(int32 x, int32 y)')
   const keybdEvent = user32.func(
     'void keybd_event(uint8 bVk, uint8 bScan, uint32 dwFlags, uintptr dwExtraInfo)'
   )
@@ -81,16 +82,9 @@ export function createWindowsBackend() {
   const inputSize = koffi.sizeof(INPUT)
   let wheelRemainder = 0
 
-  function absolute(dx: number, dy: number): void {
-    const x = Math.max(0, Math.min(65535, Math.round(dx * 65535)))
-    const y = Math.max(0, Math.min(65535, Math.round(dy * 65535)))
-    mouseEvent(
-      MOUSEEVENTF.MOVE | MOUSEEVENTF.ABSOLUTE | MOUSEEVENTF.VIRTUALDESK,
-      x,
-      y,
-      0,
-      0
-    )
+  function absolute(px: number, py: number): void {
+    // 使用 SetCursorPos：DPI 感知的绝对坐标（相对主屏幕原点，像素精度）
+    SetCursorPos(Math.round(px), Math.round(py))
   }
 
   function sendUnicode(text: string): boolean {

@@ -53,25 +53,7 @@ export function injectMouse(msg: MouseEventMessage): boolean {
     displays.find((d) => d.id === msg.displayId) ?? screen.getPrimaryDisplay()
   const nx = clamp01(msg.x)
   const ny = clamp01(msg.y)
-
-  if (process.platform === 'win32') {
-    const left = Math.min(...displays.map((d) => d.bounds.x))
-    const top = Math.min(...displays.map((d) => d.bounds.y))
-    const right = Math.max(...displays.map((d) => d.bounds.x + d.bounds.width))
-    const bottom = Math.max(...displays.map((d) => d.bounds.y + d.bounds.height))
-    const vw = Math.max(1, right - left)
-    const vh = Math.max(1, bottom - top)
-    const px = display.bounds.x + nx * display.bounds.width
-    const py = display.bounds.y + ny * display.bounds.height
-    return impl.mouse({
-      kind: msg.a,
-      absX: (px - left) / vw,
-      absY: (py - top) / vh,
-      button: msg.button ?? 0,
-      delta: msg.delta ?? 0
-    })
-  }
-
+  // 统一把归一化坐标转换为相对于主屏幕原点的逻辑像素坐标
   const px = display.bounds.x + nx * display.bounds.width
   const py = display.bounds.y + ny * display.bounds.height
   return impl.mouse({

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import {
   ArrowLeft,
   BellRing,
@@ -28,6 +28,8 @@ export default function SettingsPage() {
   const refreshCapabilities = useApp((s) => s.refreshCapabilities)
   const patchSettings = useApp((s) => s.patchSettings)
   const toast = useApp((s) => s.toast)
+  const latestVersion = useApp((s) => s.latestVersion)
+  const checkUpdates = useApp((s) => s.checkUpdates)
   const [name, setName] = useState(settings?.deviceName ?? '')
   const [fixedPin, setFixedPin] = useState(settings?.fixedPin ?? '')
   const [turnUrl, setTurnUrl] = useState(settings?.turnUrl ?? '')
@@ -102,7 +104,7 @@ export default function SettingsPage() {
             </div>
           </Field>
           <div className="kv-row">
-            <span>控制码</span>
+            <span>远程码</span>
             <code>{groupCode(settings.deviceCode)}</code>
           </div>
           <div className="kv-row">
@@ -204,6 +206,16 @@ export default function SettingsPage() {
               onChange={(v) => void patchSettings({ clipboardSync: v })}
             />
           </div>
+          <div className="setting-row">
+            <div>
+              <strong>自动接受连接请求</strong>
+              <span>勾选后，知道远程码和控制密码的设备可直接连接；关闭则会弹出确认窗口（推荐）</span>
+            </div>
+            <Switch
+              checked={!!settings.autoAccept}
+              onChange={(v) => void patchSettings({ autoAccept: v })}
+            />
+          </div>
         </section>
 
         <section className="card settings-card">
@@ -272,7 +284,7 @@ export default function SettingsPage() {
           </div>
           <div className="notice">
             <Info size={14} />
-            <span>控制码与密码经密码加密后才通过公共通道交换，屏幕与控制数据始终点对点直连。</span>
+            <span>远程码与密码经密码加密后才通过公共通道交换，屏幕与控制数据始终点对点直连。</span>
           </div>
         </section>
 
@@ -358,8 +370,8 @@ export default function SettingsPage() {
             >
               WebRTC 技术
             </Button>
-            <Button variant="ghost" size="sm" icon={<BellRing size={13} />} onClick={() => void patchSettings({})}>
-              检查更新
+            <Button variant="ghost" size="sm" icon={<BellRing size={13} />} onClick={() => void checkUpdates()}>
+              {latestVersion ? `检查更新 (v${latestVersion})` : '检查更新'}
             </Button>
           </div>
         </section>

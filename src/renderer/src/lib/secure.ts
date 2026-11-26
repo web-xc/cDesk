@@ -1,6 +1,6 @@
-/**
- * 控制码信令的端到端加密：
- * PBKDF2-SHA256(密码, 盐 = "cdesk:v1:<控制码>") -> AES-GCM-256。
+﻿/**
+ * 远程码信令的端到端加密：
+ * PBKDF2-SHA256(密码, 盐 = "cdesk:v1:<远程码>") -> AES-GCM-256。
  * 密码不会上传，broker 只能看到密文；解密成功即等价于密码校验通过。
  */
 
@@ -67,7 +67,7 @@ export async function seal(payload: unknown, password: string, code: string): Pr
   return toBase64(out)
 }
 
-/** 解密失败（密码或控制码不匹配、内容损坏）返回 null，不抛异常 */
+/** 解密失败（密码或远程码不匹配、内容损坏）返回 null，不抛异常 */
 export async function open<T>(text: string, password: string, code: string): Promise<T | null> {
   try {
     const bytes = fromBase64(text)

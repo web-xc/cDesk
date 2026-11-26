@@ -1,10 +1,10 @@
-export type QualityPreset = 'smooth' | 'balanced' | 'sharp'
+﻿export type QualityPreset = 'smooth' | 'balanced' | 'sharp'
 
 export type ThemeMode = 'dark' | 'light' | 'system'
 
 export interface Settings {
   deviceId: string
-  /** 9 位固定控制码，由 deviceId 派生，永久不变 */
+  /** 9 位固定远程码，由 deviceId 派生，永久不变 */
   deviceCode: string
   deviceName: string
   theme: ThemeMode
@@ -21,6 +21,8 @@ export interface Settings {
   showStats: boolean
   viewOnly: boolean
   reduceMotion: boolean
+  /** true 表示密码匹配即自动接受；false 显示系统级接受/拒绝弹窗 */
+  autoAccept: boolean
 }
 
 export interface SignalStatus {

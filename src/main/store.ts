@@ -1,11 +1,11 @@
-import { app } from 'electron'
+﻿import { app } from 'electron'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import type { Settings } from '@shared/types'
 
-/** 由 deviceId 派生 9 位固定控制码：同一设备永久不变 */
+/** 由 deviceId 派生 9 位固定远程码：同一设备永久不变 */
 export function deriveDeviceCode(deviceId: string): string {
   const hash = createHash('sha256').update(`cdesk:code:${deviceId}`).digest()
   let value = 0n
@@ -31,7 +31,8 @@ const defaults = (): Settings => {
     launchAtLogin: false,
     showStats: true,
     viewOnly: false,
-    reduceMotion: false
+    reduceMotion: false,
+    autoAccept: false
   }
 }
 
@@ -63,7 +64,7 @@ export function setSettings(patch: Partial<Settings>): Settings {
   if (patch.deviceName !== undefined) {
     next.deviceName = String(patch.deviceName).slice(0, 40) || os.hostname()
   }
-  // 控制码由 deviceId 派生，禁止修改
+  // 远程码由 deviceId 派生，禁止修改
   next.deviceId = current.deviceId
   next.deviceCode = deriveDeviceCode(current.deviceId)
   if (patch.fixedPin !== undefined) {

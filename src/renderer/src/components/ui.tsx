@@ -56,11 +56,12 @@ export function IconButton({
   return (
     <button
       className={cn('icon-btn', active && 'is-active', danger && 'is-danger', className)}
-      data-tip={label}
       aria-label={label}
+      title={label}
       {...rest}
     >
-      {children}
+      <span className="icon-btn-icon">{children}</span>
+      <span className="icon-btn-label">{label}</span>
     </button>
   )
 }

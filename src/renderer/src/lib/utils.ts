@@ -1,4 +1,4 @@
-export function cn(...values: Array<string | false | null | undefined>): string {
+﻿export function cn(...values: Array<string | false | null | undefined>): string {
   return values.filter(Boolean).join(' ')
 }
 
@@ -54,7 +54,7 @@ export function randomPassword(length = 6): string {
   return out
 }
 
-/** 控制码按 3-3-3 分组显示 */
+/** 远程码按 3-3-3 分组显示 */
 export function groupCode(code: string): string {
   const clean = code.replace(/\D/g, '').slice(0, 9)
   return clean.replace(/(\d{3})(?=\d)/g, '$1 ')
@@ -62,18 +62,18 @@ export function groupCode(code: string): string {
 
 /** 一键复制到剪贴板的完整远程操控信息 */
 export function formatControlInfo(code: string, password: string): string {
-  return `控制码：${groupCode(code)}\n密码：${password}`
+  return `远程码：${groupCode(code)}\n密码：${password}`
 }
 
 /**
- * 解析“控制码 + 密码”：
+ * 解析“远程码 + 密码”：
  * 支持 "123456789 abc123"、"123 456 789 abc123"、
- * "控制码：123 456 789 密码：abc123"、多行粘贴等。
+ * "远程码：123 456 789 密码：abc123"、多行粘贴等。
  */
 export function parseControlInfo(input: string): { code: string; password: string } | null {
   const text = (input ?? '').trim()
   if (!text) return null
-  const cleaned = text.replace(/(控制码|连接码|设备码|远程码|控制密码|密码|口令)/g, ' ')
+  const cleaned = text.replace(/(远程码|连接码|设备码|远程码|控制密码|密码|口令)/g, ' ')
   const codeMatch = cleaned.match(/(\d{3})[\s-]?(\d{3})[\s-]?(\d{3})(?!\d)/)
   if (!codeMatch) return null
   const code = codeMatch[1] + codeMatch[2] + codeMatch[3]

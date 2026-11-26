@@ -3,6 +3,11 @@ import path from 'node:path'
 import { installDisplayMediaHandler, registerIpc } from './ipc'
 import { getSettings } from './store'
 
+// 强制开启高 DPI 感知（Per-Monitor V2），让 screen.getAllDisplays()
+// 返回物理像素 bounds，配合 SetCursorPos 获得精确的输入注入
+app.commandLine.appendSwitch('high-dpi-support', '1')
+app.commandLine.appendSwitch('force-device-scale-factor', '1')
+
 let mainWindow: BrowserWindow | null = null
 
 const isMac = process.platform === 'darwin'
