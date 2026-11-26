@@ -12,24 +12,24 @@ export const QUALITY_PRESETS: Record<
 > = {
   smooth: {
     label: '流畅',
-    hint: '1280 × 720 · 30fps · 2.5 Mbps',
+    hint: '1280 × 720 · 60fps · 3 Mbps',
     width: 1280,
-    fps: 30,
-    bitrate: 2_500_000
+    fps: 60,
+    bitrate: 3_000_000
   },
   balanced: {
     label: '均衡',
-    hint: '1920 × 1080 · 30fps · 8 Mbps',
+    hint: '1920 × 1080 · 60fps · 12 Mbps',
     width: 1920,
-    fps: 30,
-    bitrate: 8_000_000
+    fps: 60,
+    bitrate: 12_000_000
   },
   sharp: {
     label: '高清',
-    hint: '原始分辨率 · 60fps · 16 Mbps',
+    hint: '原始分辨率 · 60fps · 20 Mbps',
     width: 3840,
     fps: 60,
-    bitrate: 16_000_000
+    bitrate: 20_000_000
   }
 }
 

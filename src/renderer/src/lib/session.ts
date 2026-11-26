@@ -738,8 +738,9 @@ export class RemoteSession {
           }
         : false,
       video: {
-        frameRate: { ideal: preset.fps, max: preset.fps },
-        width: { ideal: preset.width }
+        frameRate: { ideal: preset.fps, max: 60 },
+        width: { ideal: preset.width },
+        height: { ideal: preset.width === 3840 ? 2160 : preset.width === 1920 ? 1080 : 720 }
       }
     }
     try {
@@ -748,16 +749,55 @@ export class RemoteSession {
       if (video) {
         video.contentHint = 'detail'
         try {
-          await video.applyConstraints({ frameRate: { ideal: preset.fps, max: 60 } })
+          await video.applyConstraints({
+            frameRate: { ideal: preset.fps, max: 60 },
+            width: { ideal: preset.width },
+            height: constraints.video ? (constraints.video as MediaTrackConstraints).height : undefined
+          })
         } catch { /* 平台不支持更高约束时忽略 */ }
-        void this.videoSender?.setParameters({
-          ...this.videoSender.getParameters(),
-          encodings: [{
-            ...(this.videoSender.getParameters().encodings?.[0] ?? {}),
-            maxBitrate: preset.bitrate * 1.2,
-            maxFramerate: preset.fps
-          }]
-        }).catch(() => {})
+
+        // Simulcast SVC 3 层编码（高/中/低），接收端弱网时可丢弃高层保帧率
+        if (this.videoSender) {
+          const params = this.videoSender.getParameters()
+          const total = preset.bitrate
+          params.encodings = [
+            {
+              rid: 'h',
+              scaleResolutionDownBy: 1,
+              maxBitrate: Math.round(total * 0.85),
+              maxFramerate: preset.fps,
+              priority: 'high'
+            },
+            {
+              rid: 'm',
+              scaleResolutionDownBy: 2,
+              maxBitrate: Math.round(total * 0.35),
+              maxFramerate: preset.fps,
+              priority: 'medium'
+            },
+            {
+              rid: 'l',
+              scaleResolutionDownBy: 4,
+              maxBitrate: Math.round(total * 0.12),
+              maxFramerate: 30,
+              priority: 'low'
+            }
+          ]
+          params.degradationPreference = 'maintain-framerate'
+          try {
+            await this.videoSender.setParameters(params)
+          } catch {
+            // 浏览器不支持 Simulcast 时降级为单层
+            const fallback = this.videoSender.getParameters()
+            fallback.encodings = [{
+              ...(fallback.encodings?.[0] ?? {}),
+              maxBitrate: total * 1.3,
+              maxFramerate: preset.fps
+            }]
+            fallback.degradationPreference = 'maintain-framerate'
+            await this.videoSender.setParameters(fallback).catch(() => {})
+          }
+        }
       }
       return stream
     } catch (err) {
@@ -817,21 +857,36 @@ export class RemoteSession {
 
   private async applyCodecPreference(pc: RTCPeerConnection): Promise<void> {
     try {
-      const capabilities = RTCRtpReceiver.getCapabilities('video')
-      if (!capabilities) return
+      const caps = RTCRtpReceiver.getCapabilities('video')
+      if (!caps) return
+      // 远控优先 VP8（低延迟、软编高效）> H264 > VP9，AV1 因编码时延高排最后
       const rank = (mime: string): number => {
-        if (/vp9/i.test(mime)) return 0
+        if (/vp8/i.test(mime)) return 0
         if (/h264/i.test(mime)) return 1
-        if (/av1/i.test(mime)) return 2
-        if (/vp8/i.test(mime)) return 3
+        if (/vp9/i.test(mime)) return 2
+        if (/av1/i.test(mime)) return 3
         return 4
       }
-      const codecs = [...capabilities.codecs].sort((a, b) => rank(a.mimeType) - rank(b.mimeType))
+      const codecs = [...caps.codecs].sort((a, b) => rank(a.mimeType) - rank(b.mimeType))
       for (const transceiver of pc.getTransceivers()) {
         try {
           transceiver.setCodecPreferences(codecs)
         } catch {
           /* ignore */
+        }
+      }
+      // VP8 开启 SVC（Scalable Video Coding）分层编码，接收端可按需丢弃高层
+      if ('setParameters' in pc.getTransceivers()[0]?.sender) {
+        for (const t of pc.getTransceivers()) {
+          if (t.sender && t.direction === 'sendonly') {
+            try {
+              const params = t.sender.getParameters()
+              params.degradationPreference = 'maintain-framerate'
+              await t.sender.setParameters(params)
+            } catch {
+              /* ignore */
+            }
+          }
         }
       }
     } catch {

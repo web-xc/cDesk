@@ -35,6 +35,12 @@ interface Recent {
   ts: number
   transport: 'lan' | 'code'
   role: 'viewer' | 'host'
+  // 重连所需信息（viewer 端保存，host 端不需要自动重连）
+  peerId?: string
+  address?: string
+  port?: number
+  code?: string
+  pin?: string
 }
 
 const RECENTS_KEY = 'cdesk.recents'
@@ -144,6 +150,7 @@ export default function HomePage() {
   const toast = useApp((s) => s.toast)
   const signalConnected = useApp((s) => s.signalConnected)
   const signalError = useApp((s) => s.signalError)
+  const capabilities = useApp((s) => s.capabilities)
 
   const [mode, setMode] = useState<Mode>('code')
   const [selectedPeer, setSelectedPeer] = useState<string | null>(null)
@@ -178,7 +185,7 @@ export default function HomePage() {
     setConnecting(true)
     try {
       const conn = await window.cdesk.lan.connect(peer.address, peer.port)
-      pushRecent({ name: peer.name, os: peer.os, ts: Date.now(), transport: 'lan', role: 'viewer' })
+      pushRecent({ name: peer.name, os: peer.os, ts: Date.now(), transport: 'lan', role: 'viewer', peerId: peer.id, address: peer.address, port: peer.port, pin: attemptPin.trim() })
       setRecents(loadRecents())
       setLaunch({
         role: 'viewer',
@@ -203,21 +210,61 @@ export default function HomePage() {
       toast('error', '远程操控信息格式不正确', '请粘贴「远程码 + 密码」，例如：123 456 789 abc123')
       return
     }
+    startCodeControlWith(result.code, result.password, result.code)
+  }
+
+  const startCodeControlWith = (code: string, password: string, _label?: string) => {
     pushRecent({
-      name: `远程码 ${groupCode(result.code)}`,
+      name: `远程码 ${groupCode(code)}`,
       os: 'cDesk',
       ts: Date.now(),
       transport: 'code',
-      role: 'viewer'
+      role: 'viewer',
+      code,
+      pin: password
     })
     setRecents(loadRecents())
     setLaunch({
       role: 'viewer',
       transport: 'code',
-      pin: result.password,
-      code: result.code,
+      pin: password,
+      code,
       peerName: '远程设备'
     })
+  }
+
+  function reconnectRecent(item: Recent) {
+    if (item.transport === 'code' && item.code && item.pin) {
+      setControlInfo(`${item.code} ${item.pin}`)
+      startCodeControlWith(item.code, item.pin)
+    } else if (item.transport === 'lan' && item.address && item.port && item.pin) {
+      setMode('lan')
+      const pin = item.pin
+      const addr = item.address
+      const port = item.port
+      setAttemptPin(pin)
+      // 直接发起连接，跳过选 peer 的交互
+      ;(async () => {
+        setConnecting(true)
+        try {
+          const conn = await window.cdesk.lan.connect(addr, port)
+          setLaunch({
+            role: 'viewer',
+            transport: 'lan',
+            connId: conn.connId,
+            pin,
+            peerName: item.name,
+            peerOs: item.os
+          })
+        } catch (err) {
+          toast('error', '无法重连', err instanceof Error ? err.message : '请检查对方是否在线')
+        } finally {
+          setConnecting(false)
+        }
+      })()
+    } else {
+      toast('info', '无法自动重连', '必要的连接信息未保存，请手动连接')
+    }
   }
 
   const primary = displays.find((d) => d.primary) ?? displays[0]
@@ -325,6 +372,36 @@ export default function HomePage() {
 
           {hosting ? (
             <>
+              {/* macOS 权限警告 */}
+              {info?.platform === 'darwin' && capabilities && (
+                <div className="permission-warn">
+                  {capabilities.accessibility !== 'granted' && (
+                    <div className="warn-item">
+                      <ShieldCheck size={14} />
+                      <span>需要"辅助功能"权限才能让对方控制你的鼠标键盘</span>
+                      <button
+                        className="text-btn"
+                        onClick={() => void window.cdesk.system.openPermission('accessibility')}
+                      >
+                        打开系统设置
+                      </button>
+                    </div>
+                  )}
+                  {capabilities.screen !== 'granted' && (
+                    <div className="warn-item">
+                      <ShieldCheck size={14} />
+                      <span>需要"屏幕录制"权限才能共享你的屏幕</span>
+                      <button
+                        className="text-btn"
+                        onClick={() => void window.cdesk.system.openPermission('screen')}
+                      >
+                        打开系统设置
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="pin-block">
                 <span className="pin-caption">远程码 · 永久不变</span>
                 <div className="control-code">{groupCode(deviceCode)}</div>
@@ -383,7 +460,12 @@ export default function HomePage() {
           ) : (
             <div className="recent-list">
               {recents.map((item, index) => (
-                <div className="recent-row" key={`${item.name}-${item.ts}-${index}`}>
+                <div
+                  className="recent-row clickable"
+                  key={`${item.name}-${item.ts}-${index}`}
+                  title={`点击重连 · ${item.transport === 'lan' ? '局域网直连' : '远程码直连'}`}
+                  onClick={() => reconnectRecent(item)}
+                >
                   <DeviceAvatar platform={item.os} os={item.os} size={36} />
                   <div className="recent-meta">
                     <strong>{item.name}</strong>

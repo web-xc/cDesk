@@ -1133,6 +1133,40 @@ button {
   line-height: 1.65;
   max-width: 280px;
 }
+.permission-warn {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.warn-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(255, 170, 80, 0.08);
+  border: 1px solid rgba(255, 170, 80, 0.25);
+  color: #f5c68a;
+  font-size: 12px;
+}
+.warn-item svg { opacity: 0.8; flex-shrink: 0; }
+.warn-item span { flex: 1; }
+.warn-item .text-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  color: #f5c68a;
+  border: 1px solid rgba(255, 170, 80, 0.4);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.warn-item .text-btn:hover { background: rgba(255, 170, 80, 0.15); }
+
+/* ----------------------------- Share panel ------------------------------ */
+
 .pin-block {
   width: 100%;
   padding: 12px;
@@ -1261,6 +1295,7 @@ button {
   border-radius: 12px;
   transition: background 0.15s;
 }
+.recent-row.clickable { cursor: pointer; }
 .recent-row:hover {
   background: var(--surface);
 }
