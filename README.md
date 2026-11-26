@@ -6,7 +6,7 @@
 
 每台设备拥有永久固定的 9 位远程码与独立控制密码，粘贴即可直连；屏幕与控制数据走 WebRTC 直连，信令只传输加密后的密文。
 
-![version](https://img.shields.io/badge/version-1.2.0-5b8cff)
+![version](https://img.shields.io/badge/version-1.2.1-5b8cff)
 ![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-3be8c8)
 ![license](https://img.shields.io/badge/license-MIT-7b6bff)
 
@@ -140,6 +140,15 @@ scripts/           图标生成、界面截图等辅助脚本
 ```
 
 ## 更新日志
+
+### 1.2.1
+
+- 修复版本检查始终失败（渲染层 CSP 阻止请求，改为主进程请求 GitHub API）
+- 设置页新增新版本横幅与「前往下载」入口
+- 按钮、输入框聚焦态、分段控件视觉重做
+- 启动页固定浅色主题，消除启动闪黑
+- README 增加真实界面截图
+- macOS 工作流改为 x64 / arm64 分架构构建，规避 arm64 队列等待
 
 ### 1.2.0
 
